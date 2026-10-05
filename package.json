@@ -1,0 +1,17 @@
+{
+  "name": "vdc-devdeck",
+  "version": "1.0.0",
+  "description": "VDC DevDeck: Local Stack Orchestrator & Auto-Discovery Automation for Verteil",
+  "main": "server/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "ws": "^8.17.0"
+  }
+}
