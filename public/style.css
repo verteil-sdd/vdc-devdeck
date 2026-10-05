@@ -44,35 +44,102 @@ body {
   transform: translateY(-2px);
 }
 
-/* Pulsating status dots */
-.pulse-green {
-  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-  animation: pulseGreen 2s infinite;
+/* Permanent Status Badge styling: prevents shape morphing and text size jumping */
+.status-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  padding: 4px 10px !important;
+  border-radius: 9999px !important;
+  border-width: 1px !important;
+  border-style: solid !important;
+  white-space: nowrap !important;
+  letter-spacing: 0.03em !important;
+  min-height: 24px !important;
+  box-sizing: border-box !important;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease !important;
 }
 
-@keyframes pulseGreen {
-  0% {
-    transform: scale(0.95);
+/* Consistent 7px status dot across all states */
+.status-dot {
+  width: 7px !important;
+  height: 7px !important;
+  min-width: 7px !important;
+  min-height: 7px !important;
+  border-radius: 50% !important;
+  display: inline-block !important;
+  margin-right: 6px !important;
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.status-dot-stopped {
+  background-color: #64748b;
+}
+
+.status-dot-running {
+  background-color: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.8);
+  animation: pulseDotGreen 2s infinite;
+}
+
+.status-dot-starting {
+  background-color: transparent !important;
+  border: 1.5px solid rgba(56, 189, 248, 0.25) !important;
+  border-top-color: #38bdf8 !important;
+  animation: spinDot 0.8s linear infinite !important;
+}
+
+.status-dot-building {
+  background-color: transparent !important;
+  border: 1.5px solid rgba(245, 158, 11, 0.25) !important;
+  border-top-color: #f59e0b !important;
+  animation: spinDot 0.8s linear infinite !important;
+}
+
+.status-dot-pulling {
+  background-color: transparent !important;
+  border: 1.5px solid rgba(217, 70, 239, 0.25) !important;
+  border-top-color: #d946ef !important;
+  animation: spinDot 0.8s linear infinite !important;
+}
+
+.status-dot-error {
+  background-color: #f43f5e;
+  box-shadow: 0 0 6px rgba(244, 63, 94, 0.8);
+}
+
+@keyframes spinDot {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes pulseDotGreen {
+  0%, 100% {
     box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
   }
-  70% {
-    transform: scale(1);
-    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
-  }
-  100% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  50% {
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0);
   }
 }
 
-.pulse-amber {
-  animation: pulseAmber 1.5s infinite;
+.pulse-purple {
+  animation: pulsePurple 2s infinite;
 }
 
-@keyframes pulseAmber {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+@keyframes pulsePurple {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(217, 70, 239, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(217, 70, 239, 0);
+  }
 }
+
 
 /* Custom Scrollbars */
 ::-webkit-scrollbar {

@@ -36,10 +36,15 @@ function broadcast(type, data) {
 // WebSocket connection handling
 wss.on('connection', async (ws) => {
   // Send initial snapshot
-  const repos = discovery.getAll().map((r) => ({
-    ...r,
-    status: supervisor.getStatus(r.name)
-  }));
+  const repos = discovery.getAll().map((r) => {
+    const proc = supervisor.getProcess(r.name);
+    return {
+      ...r,
+      status: supervisor.getStatus(r.name),
+      debugActive: proc ? !!proc.debugActive : false,
+      debugPort: proc && proc.debugPort ? proc.debugPort : r.debugPort
+    };
+  });
   const metrics = await systemMetrics.getMetrics();
   const aws = awsManager.getStatus();
   const stack = orchestrator.getStatus();
@@ -79,21 +84,26 @@ setInterval(async () => {
 
 // REST API Endpoints
 
+// Helper to format repo response
+function formatRepo(r) {
+  const proc = supervisor.getProcess(r.name);
+  return {
+    ...r,
+    status: supervisor.getStatus(r.name),
+    debugActive: proc ? !!proc.debugActive : false,
+    debugPort: proc && proc.debugPort ? proc.debugPort : r.debugPort
+  };
+}
+
 // 1. Repositories
 app.get('/api/repos', (req, res) => {
-  const repos = discovery.getAll().map((r) => ({
-    ...r,
-    status: supervisor.getStatus(r.name)
-  }));
+  const repos = discovery.getAll().map(formatRepo);
   res.json({ success: true, count: repos.length, repos });
 });
 
 app.post('/api/repos/rescan', async (req, res) => {
   await discovery.scanAll();
-  const repos = discovery.getAll().map((r) => ({
-    ...r,
-    status: supervisor.getStatus(r.name)
-  }));
+  const repos = discovery.getAll().map(formatRepo);
   res.json({ success: true, count: repos.length, repos });
 });
 
@@ -102,20 +112,30 @@ app.get('/api/repos/:name', (req, res) => {
   if (!repo) return res.status(404).json({ success: false, message: 'Repo not found' });
   res.json({
     success: true,
-    repo: { ...repo, status: supervisor.getStatus(repo.name) }
+    repo: formatRepo(repo)
   });
 });
 
 app.post('/api/repos/:name/override', (req, res) => {
-  const { jdk, port, buildCmd, runCmd, targetJar } = req.body;
-  discovery.setOverride(req.params.name, { jdk, port, buildCmd, runCmd, targetJar });
-  res.json({ success: true, repo: discovery.get(req.params.name) });
+  const { jdk, port, buildCmd, runCmd, targetJar, debugEnabled, debugPort, debugSuspend } = req.body;
+  discovery.setOverride(req.params.name, {
+    jdk,
+    port,
+    buildCmd,
+    runCmd,
+    targetJar,
+    debugEnabled,
+    debugPort: debugPort !== undefined ? parseInt(debugPort, 10) : undefined,
+    debugSuspend
+  });
+  res.json({ success: true, repo: formatRepo(discovery.get(req.params.name)) });
 });
 
 // 2. Lifecycle Actions (Individual)
 app.post('/api/repos/:name/start', async (req, res) => {
   try {
-    const result = await supervisor.start(req.params.name);
+    const { debug, debugPort, suspend } = req.body || {};
+    const result = await supervisor.start(req.params.name, { debug, debugPort, suspend });
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -133,8 +153,36 @@ app.post('/api/repos/:name/stop', async (req, res) => {
 
 app.post('/api/repos/:name/restart', async (req, res) => {
   try {
-    const result = await supervisor.restart(req.params.name);
+    const { debug, debugPort, suspend } = req.body || {};
+    const result = await supervisor.restart(req.params.name, { debug, debugPort, suspend });
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/repos/:name/debug', async (req, res) => {
+  try {
+    const { debugPort, suspend } = req.body || {};
+    const name = req.params.name;
+    const repo = discovery.get(name);
+    if (!repo) return res.status(404).json({ success: false, message: 'Repo not found' });
+
+    const portNum = debugPort ? parseInt(debugPort, 10) : (repo.debugPort || config.defaultDebugPort || 5005);
+    discovery.setOverride(name, {
+      debugEnabled: true,
+      debugPort: portNum,
+      debugSuspend: suspend !== undefined ? !!suspend : (repo.debugSuspend || false)
+    });
+
+    const currentStatus = supervisor.getStatus(name);
+    let result;
+    if (currentStatus === 'RUNNING' || currentStatus === 'STARTING') {
+      result = await supervisor.restart(name, { debug: true, debugPort: portNum, suspend });
+    } else {
+      result = await supervisor.start(name, { debug: true, debugPort: portNum, suspend });
+    }
+    res.json({ success: true, ...result, debugPort: portNum });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

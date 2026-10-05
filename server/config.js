@@ -78,5 +78,23 @@ export const config = {
     'payment': 8089,
     'connector-flyr': 8091,
     'connector-flyr-v1': 8092
+  },
+
+  // Default JDWP Remote Debugging Port configuration
+  defaultDebugPort: 5005,
+  debugPortDefaults: {
+    'entrygate-service': 5005,
+    'tomcat-vdc': 8000,
+    'vdc-configurator': 5006,
+    'auth-service': 5007,
+    'agencymanagement-v1': 5008,
+    'ordermanagement-v1': 5009,
+    'offermanagement-v1': 5010,
+    'payment': 5011,
+    'opendata': 5012,
+    'ordermanagement': 5013,
+    'offermanagement': 5014,
+    'connector-flyr': 5015,
+    'connector-flyr-v1': 5016
   }
 };

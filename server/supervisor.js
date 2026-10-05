@@ -81,7 +81,9 @@ class SupervisorEngine {
         status: proc.status,
         pid: proc.pid,
         startedAt: proc.startedAt,
-        port: proc.port
+        port: proc.port,
+        debugActive: proc.debugActive || false,
+        debugPort: proc.debugPort || null
       };
     }
     return result;
@@ -178,7 +180,7 @@ class SupervisorEngine {
     return false;
   }
 
-  async start(repoName) {
+  async start(repoName, options = {}) {
     const repo = discovery.get(repoName);
     if (!repo) {
       throw new Error(`Repository ${repoName} not found in catalog.`);
@@ -197,6 +199,12 @@ class SupervisorEngine {
       };
       this.processes.set(repoName, proc);
     }
+
+    // Determine Debug Mode & Port
+    const isDebug = options.debug !== undefined ? !!options.debug : !!repo.debugEnabled;
+    const defaultDebugPort = (config.debugPortDefaults && config.debugPortDefaults[repoName]) || config.defaultDebugPort || 5005;
+    const debugPort = options.debugPort ? parseInt(options.debugPort, 10) : (repo.debugPort || defaultDebugPort);
+    const suspend = options.suspend !== undefined ? !!options.suspend : (repo.debugSuspend || false);
 
     // Ensure AWS credentials are fresh
     if (!awsManager.isTokenFresh()) {
@@ -220,6 +228,17 @@ class SupervisorEngine {
     const jvmMemoryFlags = [`-Xms${mem.min}`, `-Xmx${mem.max}`];
     const jvmFlags = [...jvmMemoryFlags, ...config.antiLagFlags];
 
+    // JDWP Remote Debugging Flag
+    let jdwpFlag = null;
+    if (isDebug) {
+      const addressSpec = (repo.jdk && (repo.jdk.startsWith('8') || repo.jdk.startsWith('1.8')))
+        ? `${debugPort}`
+        : `*:${debugPort}`;
+      const suspendVal = suspend ? 'y' : 'n';
+      jdwpFlag = `-agentlib:jdwp=transport=dt_socket,server=y,suspend=${suspendVal},address=${addressSpec}`;
+      jvmFlags.push(jdwpFlag);
+    }
+
     // Log file stream
     const logFilePath = path.join(config.logsDir, `${repoName}.log`);
     const fileStream = fs.createWriteStream(logFilePath, { flags: 'a' });
@@ -228,7 +247,16 @@ class SupervisorEngine {
     proc.status = 'STARTING';
     proc.startedAt = Date.now();
     proc.port = repo.port;
-    this.emit('status:changed', { name: repoName, status: 'STARTING', port: repo.port });
+    proc.debugActive = isDebug;
+    proc.debugPort = isDebug ? debugPort : null;
+    proc.debugSuspend = isDebug ? suspend : false;
+    this.emit('status:changed', {
+      name: repoName,
+      status: 'STARTING',
+      port: repo.port,
+      debugActive: isDebug,
+      debugPort: isDebug ? debugPort : null
+    });
 
     const isNodeOrAngular = repo.projectType === 'angular' || repo.projectType === 'node';
     this.appendLog(
@@ -238,7 +266,12 @@ class SupervisorEngine {
       (isNodeOrAngular
         ? `\x1b[36m[DevDeck]\x1b[0m Project Type: ${repo.projectType.toUpperCase()} (Port: ${repo.port || 4200})\n`
         : `\x1b[36m[DevDeck]\x1b[0m JDK: ${repo.jdk} (${javaBin})\n` +
-          `\x1b[36m[DevDeck]\x1b[0m Anti-Lag JVM Flags: ${jvmFlags.join(' ')}\n`) +
+          `\x1b[36m[DevDeck]\x1b[0m Anti-Lag JVM Flags: ${jvmFlags.filter((f) => !f.startsWith('-agentlib:jdwp')).join(' ')}\n` +
+          (isDebug
+            ? `\x1b[1;35m[DevDeck DEBUG]\x1b[0m 🐛 Remote Debugger (JDWP): \x1b[1;32mACTIVE\x1b[0m on port \x1b[1;33m${debugPort}\x1b[0m\n` +
+              `\x1b[35m[DevDeck DEBUG]\x1b[0m ⚙️  JVM Option: \x1b[36m${jdwpFlag}\x1b[0m\n` +
+              `\x1b[35m[DevDeck DEBUG]\x1b[0m 🔌 IDE Debugger Target: \x1b[1;32mlocalhost:${debugPort}\x1b[0m\n`
+            : '')) +
       `\x1b[36m=======================================================\x1b[0m\n\n`
     );
 
@@ -293,9 +326,17 @@ class SupervisorEngine {
         detached: true
       });
     } else if (repo.projectType === 'tomcat') {
-      child = spawn('sh', ['./bin/catalina.sh', 'jpda', 'run'], {
+      const tomcatEnv = {
+        ...env,
+        JPDA_TRANSPORT: 'dt_socket',
+        JPDA_ADDRESS: `*:${debugPort}`,
+        JPDA_SUSPEND: suspend ? 'y' : 'n',
+        JPDA_OPTS: `-agentlib:jdwp=transport=dt_socket,server=y,suspend=${suspend ? 'y' : 'n'},address=*:${debugPort}`
+      };
+
+      child = spawn('sh', ['./bin/catalina.sh', isDebug ? 'jpda' : 'run'], {
         cwd: repo.path,
-        env,
+        env: tomcatEnv,
         detached: true
       });
     } else {
@@ -327,7 +368,8 @@ class SupervisorEngine {
 
       if (!resolvedJar) {
         proc.status = 'STOPPED';
-        this.emit('status:changed', { name: repoName, status: 'STOPPED' });
+        proc.debugActive = false;
+        this.emit('status:changed', { name: repoName, status: 'STOPPED', debugActive: false, debugPort: null });
         const err = `Executable JAR file matching '${repo.targetJar || 'build'}' was not found. Please build the application first.`;
         this.appendLog(repoName, `\x1b[31m[ERROR]\x1b[0m ${err}\n`);
         throw new Error(err);
@@ -337,7 +379,8 @@ class SupervisorEngine {
       const fullJarPath = path.join(repo.path, resolvedJar);
       if (fs.existsSync(fullJarPath) && !discovery.isJarExecutable(fullJarPath)) {
         proc.status = 'STOPPED';
-        this.emit('status:changed', { name: repoName, status: 'STOPPED' });
+        proc.debugActive = false;
+        this.emit('status:changed', { name: repoName, status: 'STOPPED', debugActive: false, debugPort: null });
         const err = `Resolved JAR '${resolvedJar}' has no Main-Class manifest attribute (not an executable JAR). Please verify that the server module is built.`;
         this.appendLog(repoName, `\x1b[31m[ERROR]\x1b[0m ${err}\n`);
         throw new Error(err);
@@ -372,27 +415,51 @@ class SupervisorEngine {
       proc.status = 'STOPPED';
       proc.pid = null;
       proc.child = null;
-      this.emit('status:changed', { name: repoName, status: 'STOPPED', code });
+      proc.debugActive = false;
+      this.emit('status:changed', {
+        name: repoName,
+        status: 'STOPPED',
+        code,
+        debugActive: false,
+        debugPort: null
+      });
     });
 
     child.on('error', (err) => {
       this.appendLog(repoName, `\x1b[31m[DevDeck Process Error]\x1b[0m ${err.message}\n`);
       proc.status = 'ERROR';
-      this.emit('status:changed', { name: repoName, status: 'ERROR', error: err.message });
+      proc.debugActive = false;
+      this.emit('status:changed', {
+        name: repoName,
+        status: 'ERROR',
+        error: err.message,
+        debugActive: false,
+        debugPort: null
+      });
     });
 
     // Mark as running once spawned
     proc.status = 'RUNNING';
-    this.emit('status:changed', { name: repoName, status: 'RUNNING', pid: child.pid });
+    this.emit('status:changed', {
+      name: repoName,
+      status: 'RUNNING',
+      pid: child.pid,
+      port: repo.port,
+      debugActive: isDebug,
+      debugPort: isDebug ? debugPort : null
+    });
 
-    return { success: true, pid: child.pid };
+    return { success: true, pid: child.pid, debugActive: isDebug, debugPort: isDebug ? debugPort : null };
   }
 
   async stop(repoName) {
     const proc = this.processes.get(repoName);
     if (!proc || !proc.child || proc.status === 'STOPPED') {
-      if (proc) proc.status = 'STOPPED';
-      this.emit('status:changed', { name: repoName, status: 'STOPPED' });
+      if (proc) {
+        proc.status = 'STOPPED';
+        proc.debugActive = false;
+      }
+      this.emit('status:changed', { name: repoName, status: 'STOPPED', debugActive: false, debugPort: null });
       return { success: true, message: `${repoName} is already stopped.` };
     }
 
@@ -428,14 +495,15 @@ class SupervisorEngine {
     proc.status = 'STOPPED';
     proc.pid = null;
     proc.child = null;
-    this.emit('status:changed', { name: repoName, status: 'STOPPED' });
+    proc.debugActive = false;
+    this.emit('status:changed', { name: repoName, status: 'STOPPED', debugActive: false, debugPort: null });
     return { success: true };
   }
 
-  async restart(repoName) {
+  async restart(repoName, options = {}) {
     await this.stop(repoName);
     await new Promise((r) => setTimeout(r, 1000));
-    return await this.start(repoName);
+    return await this.start(repoName, options);
   }
 
   async build(repoName) {

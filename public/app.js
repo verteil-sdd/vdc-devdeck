@@ -67,15 +67,32 @@ class App {
     this.countConnectors = document.getElementById('countConnectors');
     this.countUnbuilt = document.getElementById('countUnbuilt');
 
-    // Modal
+    // Config Modal
     this.configModal = document.getElementById('configModal');
     this.modalRepoName = document.getElementById('modalRepoName');
     this.modalJdkSelect = document.getElementById('modalJdkSelect');
     this.modalPortInput = document.getElementById('modalPortInput');
     this.modalTargetJarInput = document.getElementById('modalTargetJarInput');
+    this.modalDebugToggle = document.getElementById('modalDebugToggle');
+    this.modalDebugPortInput = document.getElementById('modalDebugPortInput');
+    this.modalDebugSuspendInput = document.getElementById('modalDebugSuspendInput');
+    this.modalDebugPreview = document.getElementById('modalDebugPreview');
+    this.modalDebugFields = document.getElementById('modalDebugFields');
     this.modalForm = document.getElementById('modalForm');
     this.modalCloseBtn = document.getElementById('modalCloseBtn');
     this.modalCancelBtn = document.getElementById('modalCancelBtn');
+
+    // Quick Debug Modal
+    this.quickDebugModal = document.getElementById('quickDebugModal');
+    this.quickDebugRepoName = document.getElementById('quickDebugRepoName');
+    this.quickDebugForm = document.getElementById('quickDebugForm');
+    this.quickDebugPortInput = document.getElementById('quickDebugPortInput');
+    this.quickDebugSuspendInput = document.getElementById('quickDebugSuspendInput');
+    this.quickDebugPreview = document.getElementById('quickDebugPreview');
+    this.quickDebugCloseBtn = document.getElementById('quickDebugCloseBtn');
+    this.quickDebugCancelBtn = document.getElementById('quickDebugCancelBtn');
+    this.quickDebugSubmitText = document.getElementById('quickDebugSubmitText');
+    this.quickDebugSaveDefault = document.getElementById('quickDebugSaveDefault');
   }
 
   initEventListeners() {
@@ -157,10 +174,36 @@ class App {
       this.renderTerminalLogs();
     });
 
-    // Modal
+    // Config Modal
     this.modalCloseBtn.addEventListener('click', () => this.closeModal());
     this.modalCancelBtn.addEventListener('click', () => this.closeModal());
     this.modalForm.addEventListener('submit', (e) => this.handleModalSubmit(e));
+    if (this.modalDebugPortInput) {
+      this.modalDebugPortInput.addEventListener('input', () => this.updateModalDebugPreview());
+    }
+    if (this.modalDebugSuspendInput) {
+      this.modalDebugSuspendInput.addEventListener('change', () => this.updateModalDebugPreview());
+    }
+    if (this.modalDebugToggle) {
+      this.modalDebugToggle.addEventListener('change', () => this.updateModalDebugPreview());
+    }
+
+    // Quick Debug Modal
+    if (this.quickDebugCloseBtn) {
+      this.quickDebugCloseBtn.addEventListener('click', () => this.closeQuickDebugModal());
+    }
+    if (this.quickDebugCancelBtn) {
+      this.quickDebugCancelBtn.addEventListener('click', () => this.closeQuickDebugModal());
+    }
+    if (this.quickDebugForm) {
+      this.quickDebugForm.addEventListener('submit', (e) => this.handleQuickDebugSubmit(e));
+    }
+    if (this.quickDebugPortInput) {
+      this.quickDebugPortInput.addEventListener('input', () => this.updateQuickDebugPreview());
+    }
+    if (this.quickDebugSuspendInput) {
+      this.quickDebugSuspendInput.addEventListener('change', () => this.updateQuickDebugPreview());
+    }
   }
 
   connectWebSocket() {
@@ -205,6 +248,8 @@ class App {
           const repo = this.repos.get(data.name);
           repo.status = data.status;
           if (data.port) repo.port = data.port;
+          if (data.debugActive !== undefined) repo.debugActive = data.debugActive;
+          if (data.debugPort !== undefined) repo.debugPort = data.debugPort;
 
           this.updateCounts();
 
@@ -459,6 +504,94 @@ class App {
     }
   }
 
+  updateModalDebugPreview() {
+    if (!this.modalDebugPreview) return;
+    const port = this.modalDebugPortInput ? (this.modalDebugPortInput.value || '5005') : '5005';
+    const suspend = this.modalDebugSuspendInput && this.modalDebugSuspendInput.checked ? 'y' : 'n';
+    this.modalDebugPreview.textContent = `-agentlib:jdwp=transport=dt_socket,server=y,suspend=${suspend},address=*:${port}`;
+    if (this.modalDebugFields && this.modalDebugToggle) {
+      if (this.modalDebugToggle.checked) {
+        this.modalDebugFields.classList.remove('opacity-40', 'pointer-events-none');
+      } else {
+        this.modalDebugFields.classList.add('opacity-40', 'pointer-events-none');
+      }
+    }
+  }
+
+  updateQuickDebugPreview() {
+    if (!this.quickDebugPreview) return;
+    const port = this.quickDebugPortInput ? (this.quickDebugPortInput.value || '5005') : '5005';
+    const suspend = this.quickDebugSuspendInput && this.quickDebugSuspendInput.checked ? 'y' : 'n';
+    this.quickDebugPreview.textContent = `-agentlib:jdwp=transport=dt_socket,server=y,suspend=${suspend},address=*:${port}`;
+  }
+
+  openQuickDebugModal(name) {
+    const repo = this.repos.get(name);
+    if (!repo) return;
+
+    this.quickDebugRepoName.textContent = repo.name;
+    this.quickDebugForm.dataset.repo = repo.name;
+    this.quickDebugPortInput.value = repo.debugPort || 5005;
+    this.quickDebugSuspendInput.checked = !!repo.debugSuspend;
+    if (this.quickDebugSaveDefault) this.quickDebugSaveDefault.checked = true;
+
+    const isRunning = repo.status === 'RUNNING' || repo.status === 'STARTING';
+    if (this.quickDebugSubmitText) {
+      this.quickDebugSubmitText.textContent = isRunning ? 'Restart in Debug Mode' : 'Start in Debug Mode';
+    }
+
+    this.updateQuickDebugPreview();
+    this.quickDebugModal.classList.remove('hidden');
+    setTimeout(() => {
+      this.quickDebugPortInput.focus();
+      this.quickDebugPortInput.select();
+    }, 50);
+  }
+
+  closeQuickDebugModal() {
+    if (this.quickDebugModal) {
+      this.quickDebugModal.classList.add('hidden');
+    }
+  }
+
+  async handleQuickDebugSubmit(e) {
+    e.preventDefault();
+    const name = this.quickDebugForm.dataset.repo;
+    const port = parseInt(this.quickDebugPortInput.value, 10) || 5005;
+    const suspend = this.quickDebugSuspendInput.checked;
+    const saveDefault = this.quickDebugSaveDefault ? this.quickDebugSaveDefault.checked : true;
+
+    this.closeQuickDebugModal();
+    this.openTerminal(name);
+
+    try {
+      if (saveDefault) {
+        // Save as default in repo configuration
+        await fetch(`/api/repos/${name}/override`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            debugEnabled: true,
+            debugPort: port,
+            debugSuspend: suspend
+          })
+        });
+      }
+
+      const res = await fetch(`/api/repos/${name}/debug`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ debugPort: port, suspend })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.message || `Failed to start ${name} in debug mode`);
+      }
+    } catch (err) {
+      alert(`Debug error: ${err.message}`);
+    }
+  }
+
   openConfig(name) {
     const repo = this.repos.get(name);
     if (!repo) return;
@@ -468,6 +601,16 @@ class App {
     this.modalJdkSelect.value = repo.jdk || '21.0.1-amzn';
     this.modalPortInput.value = repo.port || '';
     this.modalTargetJarInput.value = repo.targetJar || '';
+    if (this.modalDebugToggle) {
+      this.modalDebugToggle.checked = !!repo.debugEnabled;
+    }
+    if (this.modalDebugPortInput) {
+      this.modalDebugPortInput.value = repo.debugPort || 5005;
+    }
+    if (this.modalDebugSuspendInput) {
+      this.modalDebugSuspendInput.checked = !!repo.debugSuspend;
+    }
+    this.updateModalDebugPreview();
 
     this.configModal.classList.remove('hidden');
   }
@@ -482,7 +625,10 @@ class App {
     const body = {
       jdk: this.modalJdkSelect.value,
       port: this.modalPortInput.value ? parseInt(this.modalPortInput.value, 10) : null,
-      targetJar: this.modalTargetJarInput.value.trim() || null
+      targetJar: this.modalTargetJarInput.value.trim() || null,
+      debugEnabled: this.modalDebugToggle ? this.modalDebugToggle.checked : false,
+      debugPort: this.modalDebugPortInput && this.modalDebugPortInput.value ? parseInt(this.modalDebugPortInput.value, 10) : 5005,
+      debugSuspend: this.modalDebugSuspendInput ? this.modalDebugSuspendInput.checked : false
     };
 
     try {
@@ -666,6 +812,9 @@ class App {
         badgeClass = 'bg-rose-950/60 text-rose-400 border border-rose-800/40';
       }
 
+      const isDebugActive = repo && repo.debugActive;
+      const debugPort = (repo && repo.debugPort) || 5005;
+
       return `
         <div 
           class="term-tab flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono cursor-pointer transition-all border ${
@@ -678,6 +827,7 @@ class App {
           <span class="w-1.5 h-1.5 rounded-full ${dotClass}"></span>
           <span class="font-medium max-w-[130px] truncate" title="${name}">${name}</span>
           <span class="text-[9px] px-1.5 py-0.5 rounded font-mono ${badgeClass}">${status}</span>
+          ${isDebugActive ? `<span class="text-[9px] px-1.5 py-0.5 rounded font-mono bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-600/50 flex items-center gap-1"><i class="fa-solid fa-bug text-[8px]"></i>:${debugPort}</span>` : ''}
           <button 
             type="button"
             class="tab-close-btn ml-1 text-slate-500 hover:text-rose-400 p-0.5 rounded transition-colors" 
@@ -752,77 +902,136 @@ class App {
     }
   }
 
+  attachCardListeners(card, repoName) {
+    card.querySelector('.btn-start').addEventListener('click', () => this.startRepo(repoName));
+    const debugBtn = card.querySelector('.btn-debug');
+    if (debugBtn) {
+      debugBtn.addEventListener('click', () => this.openQuickDebugModal(repoName));
+    }
+    card.querySelector('.btn-stop').addEventListener('click', () => this.stopRepo(repoName));
+    card.querySelector('.btn-restart').addEventListener('click', () => this.restartRepo(repoName));
+    card.querySelector('.btn-build').addEventListener('click', () => this.buildRepo(repoName));
+    card.querySelector('.btn-pull').addEventListener('click', () => this.pullRepo(repoName));
+    card.querySelector('.btn-logs').addEventListener('click', () => this.openTerminal(repoName));
+    card.querySelector('.btn-config').addEventListener('click', () => this.openConfig(repoName));
+  }
+
   updateCardStatus(name, status) {
     const card = document.querySelector(`[data-card-repo="${name}"]`);
     if (!card) return;
+    const repo = this.repos.get(name);
+    if (!repo) return;
 
+    // 1. Update status badge in-place (keeps fixed dimensions, no jumping)
     const badge = card.querySelector('.status-badge');
+    if (badge) {
+      badge.className = `status-badge ${this.getStatusBadgeClass(status)}`;
+      badge.innerHTML = this.getStatusBadgeContent(status);
+    }
+
+    // 2. Update debug indicator in header
+    const debugBadgeEl = card.querySelector('.header-debug-badge');
+    const isDebugActive = !!repo.debugActive;
+    const isDebugEnabled = !!repo.debugEnabled;
+    const debugPort = repo.debugPort || 5005;
+    if (debugBadgeEl) {
+      if (isDebugActive) {
+        debugBadgeEl.className = 'header-debug-badge text-[10px] font-mono font-bold text-fuchsia-300 bg-fuchsia-950/80 px-2 py-0.5 rounded-full border border-fuchsia-500/60 shadow-sm shadow-fuchsia-900/40 flex items-center gap-1 pulse-purple';
+        debugBadgeEl.innerHTML = `<i class="fa-solid fa-bug text-[10px] text-fuchsia-400"></i> :${debugPort}`;
+      } else if (isDebugEnabled) {
+        debugBadgeEl.className = 'header-debug-badge text-[10px] font-mono text-fuchsia-400/90 bg-fuchsia-950/40 px-1.5 py-0.5 rounded border border-fuchsia-800/40 flex items-center gap-1';
+        debugBadgeEl.innerHTML = `<i class="fa-solid fa-bug text-[9px]"></i> :${debugPort}`;
+      } else {
+        debugBadgeEl.className = 'header-debug-badge hidden';
+      }
+    }
+
+    // 3. Update buttons in-place
     const startBtn = card.querySelector('.btn-start');
     const stopBtn = card.querySelector('.btn-stop');
     const restartBtn = card.querySelector('.btn-restart');
     const buildBtn = card.querySelector('.btn-build');
     const pullBtn = card.querySelector('.btn-pull');
-
-    badge.className = 'status-badge ' + this.getStatusBadgeClass(status);
-    badge.innerHTML = this.getStatusBadgeContent(status);
+    const debugBtn = card.querySelector('.btn-debug');
 
     if (status === 'RUNNING') {
-      startBtn.classList.add('hidden');
-      stopBtn.classList.remove('hidden');
-      restartBtn.classList.remove('hidden');
-      buildBtn.disabled = true;
-      pullBtn.disabled = true;
-    } else if (status === 'BUILDING') {
-      badge.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-[10px]"></i> BUILDING`;
-      startBtn.disabled = true;
-      stopBtn.classList.remove('hidden');
-      restartBtn.classList.add('hidden');
-      buildBtn.disabled = true;
-      pullBtn.disabled = true;
-    } else if (status === 'PULLING') {
-      badge.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-[10px]"></i> PULLING`;
-      pullBtn.disabled = true;
+      if (startBtn) startBtn.classList.add('hidden');
+      if (stopBtn) stopBtn.classList.remove('hidden');
+      if (restartBtn) restartBtn.classList.remove('hidden');
+      if (buildBtn) buildBtn.disabled = true;
+      if (pullBtn) pullBtn.disabled = true;
+      if (debugBtn) {
+        debugBtn.disabled = false;
+        debugBtn.classList.remove('hidden');
+        if (isDebugActive) {
+          debugBtn.className = 'btn-debug btn-fluid px-2 py-1.5 rounded-lg bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-500/60 shadow-sm shadow-fuchsia-900/30 font-medium text-xs';
+        } else {
+          debugBtn.className = 'btn-debug btn-fluid px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-fuchsia-950/60 text-fuchsia-400 hover:text-fuchsia-200 border border-slate-700/80 hover:border-fuchsia-500/40 font-medium text-xs';
+        }
+      }
+    } else if (status === 'STARTING') {
+      if (startBtn) startBtn.classList.add('hidden');
+      if (stopBtn) stopBtn.classList.remove('hidden');
+      if (restartBtn) restartBtn.classList.add('hidden');
+      if (buildBtn) buildBtn.disabled = true;
+      if (pullBtn) pullBtn.disabled = true;
+      if (debugBtn) debugBtn.disabled = true;
+    } else if (status === 'BUILDING' || status === 'PULLING') {
+      if (startBtn) startBtn.disabled = true;
+      if (stopBtn) stopBtn.classList.remove('hidden');
+      if (restartBtn) restartBtn.classList.add('hidden');
+      if (buildBtn) buildBtn.disabled = true;
+      if (pullBtn) pullBtn.disabled = true;
+      if (debugBtn) debugBtn.classList.add('hidden');
     } else {
-      startBtn.classList.remove('hidden');
-      startBtn.disabled = false;
-      stopBtn.classList.add('hidden');
-      restartBtn.classList.add('hidden');
-      buildBtn.disabled = false;
-      pullBtn.disabled = false;
+      // STOPPED or ERROR
+      if (startBtn) {
+        startBtn.classList.remove('hidden');
+        startBtn.disabled = false;
+      }
+      if (stopBtn) stopBtn.classList.add('hidden');
+      if (restartBtn) restartBtn.classList.add('hidden');
+      if (buildBtn) buildBtn.disabled = false;
+      if (pullBtn) pullBtn.disabled = false;
+      if (debugBtn) {
+        debugBtn.disabled = false;
+        debugBtn.classList.remove('hidden');
+        debugBtn.className = 'btn-debug btn-fluid px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-fuchsia-950/60 text-fuchsia-400 hover:text-fuchsia-200 border border-slate-700/80 hover:border-fuchsia-500/40 font-medium text-xs';
+      }
     }
   }
 
   getStatusBadgeClass(status) {
     switch (status) {
       case 'RUNNING':
-        return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
+        return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
       case 'STARTING':
-        return 'bg-blue-500/10 text-blue-400 border border-blue-500/30';
+        return 'bg-blue-500/10 text-blue-400 border-blue-500/30';
       case 'BUILDING':
-        return 'bg-amber-500/10 text-amber-400 border border-amber-500/30 pulse-amber';
+        return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
       case 'PULLING':
-        return 'bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/30 pulse-amber';
+        return 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30';
       case 'ERROR':
-        return 'bg-rose-500/10 text-rose-400 border border-rose-500/30';
+        return 'bg-rose-500/10 text-rose-400 border-rose-500/30';
       default:
-        return 'bg-slate-800 text-slate-400 border border-slate-700';
+        return 'bg-slate-800 text-slate-400 border-slate-700';
     }
   }
 
   getStatusBadgeContent(status) {
     switch (status) {
       case 'RUNNING':
-        return `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block pulse-green mr-1.5"></span>RUNNING`;
+        return `<span class="status-dot status-dot-running"></span>RUNNING`;
       case 'STARTING':
-        return `<i class="fa-solid fa-spinner fa-spin text-[10px] mr-1.5"></i>STARTING`;
+        return `<span class="status-dot status-dot-starting"></span>STARTING`;
       case 'BUILDING':
-        return `<i class="fa-solid fa-hammer text-[10px] mr-1.5"></i>BUILDING`;
+        return `<span class="status-dot status-dot-building"></span>BUILDING`;
       case 'PULLING':
-        return `<i class="fa-solid fa-cloud-arrow-down text-[10px] mr-1.5"></i>PULLING`;
+        return `<span class="status-dot status-dot-pulling"></span>PULLING`;
       case 'ERROR':
-        return `<span class="w-1.5 h-1.5 rounded-full bg-rose-400 inline-block mr-1.5"></span>ERROR`;
+        return `<span class="status-dot status-dot-error"></span>ERROR`;
       default:
-        return `<span class="w-1.5 h-1.5 rounded-full bg-slate-500 inline-block mr-1.5"></span>STOPPED`;
+        return `<span class="status-dot status-dot-stopped"></span>STOPPED`;
     }
   }
 
@@ -872,15 +1081,9 @@ class App {
     // Attach event listeners to card buttons
     filtered.forEach((repo) => {
       const card = document.querySelector(`[data-card-repo="${repo.name}"]`);
-      if (!card) return;
-
-      card.querySelector('.btn-start').addEventListener('click', () => this.startRepo(repo.name));
-      card.querySelector('.btn-stop').addEventListener('click', () => this.stopRepo(repo.name));
-      card.querySelector('.btn-restart').addEventListener('click', () => this.restartRepo(repo.name));
-      card.querySelector('.btn-build').addEventListener('click', () => this.buildRepo(repo.name));
-      card.querySelector('.btn-pull').addEventListener('click', () => this.pullRepo(repo.name));
-      card.querySelector('.btn-logs').addEventListener('click', () => this.openTerminal(repo.name));
-      card.querySelector('.btn-config').addEventListener('click', () => this.openConfig(repo.name));
+      if (card) {
+        this.attachCardListeners(card, repo.name);
+      }
     });
   }
 
@@ -888,6 +1091,9 @@ class App {
     const isRunning = repo.status === 'RUNNING';
     const isBuilding = repo.status === 'BUILDING';
     const isPulling = repo.status === 'PULLING';
+    const isDebugActive = !!repo.debugActive;
+    const isDebugEnabled = !!repo.debugEnabled;
+    const debugPort = repo.debugPort || 5005;
 
     const branch = repo.git && repo.git.branch ? repo.git.branch : 'main';
     const isDirty = repo.git && repo.git.isDirty;
@@ -921,16 +1127,19 @@ class App {
               <h4 class="font-bold text-sm tracking-tight text-white flex items-center gap-1.5 truncate max-w-[210px]" title="${repo.name}">
                 ${repo.name}
               </h4>
-              <div class="flex items-center gap-1.5 mt-1">
+              <div class="flex items-center gap-1.5 mt-1 flex-wrap">
                 <span class="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${catClass}">
                   ${catLabel}
                 </span>
                 ${repo.port ? `<span class="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-800/40">:${repo.port}</span>` : ''}
+                <span class="header-debug-badge ${isDebugActive ? 'text-[10px] font-mono font-bold text-fuchsia-300 bg-fuchsia-950/80 px-2 py-0.5 rounded-full border border-fuchsia-500/60 shadow-sm shadow-fuchsia-900/40 flex items-center gap-1 pulse-purple' : isDebugEnabled ? 'text-[10px] font-mono text-fuchsia-400/90 bg-fuchsia-950/40 px-1.5 py-0.5 rounded border border-fuchsia-800/40 flex items-center gap-1' : 'hidden'}" title="Remote Debugger (Port: ${debugPort})">
+                  <i class="fa-solid fa-bug text-[10px] text-fuchsia-400"></i> :${debugPort}
+                </span>
               </div>
             </div>
 
             <!-- Status Badge -->
-            <span class="status-badge text-[11px] font-mono font-medium px-2.5 py-1 rounded-full flex items-center ${this.getStatusBadgeClass(repo.status)}">
+            <span class="status-badge ${this.getStatusBadgeClass(repo.status)}">
               ${this.getStatusBadgeContent(repo.status)}
             </span>
           </div>
@@ -962,6 +1171,19 @@ class App {
               </span>
             </div>
 
+            <!-- JDWP Debug Row (if enabled or active) -->
+            ${(isDebugEnabled || isDebugActive) ? `
+              <div class="flex items-center justify-between text-[11px] ${isDebugActive ? 'text-fuchsia-300' : 'text-slate-400'}">
+                <span class="flex items-center gap-1">
+                  <i class="fa-solid fa-bug text-[10px] text-fuchsia-400"></i>
+                  <span>JDWP Debug:</span>
+                </span>
+                <span class="font-mono text-[10px] ${isDebugActive ? 'text-fuchsia-300 font-bold' : 'text-slate-400'}">
+                  :${debugPort} ${isDebugActive ? '<span class="text-[9px] bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-700/60 px-1 rounded ml-0.5">ACTIVE</span>' : ''}
+                </span>
+              </div>
+            ` : ''}
+
             <!-- Anti-lag tuning pill -->
             <div class="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
               <span>Anti-Lag: <span class="text-indigo-400">384M / C1 JIT</span></span>
@@ -972,9 +1194,12 @@ class App {
 
         <!-- Action Button Row -->
         <div class="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-1.5">
-          <div class="flex items-center gap-1">
+          <div class="flex items-center gap-1 flex-wrap">
             <button class="btn-start btn-fluid px-2.5 py-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white font-medium text-xs shadow-sm shadow-emerald-600/20 ${isRunning ? 'hidden' : ''}" title="Start Application">
               <i class="fa-solid fa-play text-[10px] mr-1"></i> Start
+            </button>
+            <button class="btn-debug btn-fluid px-2 py-1.5 rounded-lg ${isDebugActive ? 'bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-500/60 shadow-sm shadow-fuchsia-900/30' : 'bg-slate-800 hover:bg-fuchsia-950/60 text-fuchsia-400 hover:text-fuchsia-200 border border-slate-700/80 hover:border-fuchsia-500/40'} font-medium text-xs ${isBuilding || isPulling ? 'hidden' : ''}" title="Launch with Remote Debugger (JDWP port: ${debugPort})">
+              <i class="fa-solid fa-bug text-[10px] mr-1 text-fuchsia-400"></i> Debug
             </button>
             <button class="btn-stop btn-fluid px-2.5 py-1.5 rounded-lg bg-rose-600/90 hover:bg-rose-500 text-white font-medium text-xs shadow-sm shadow-rose-600/20 ${isRunning || isBuilding ? '' : 'hidden'}" title="Stop Process">
               <i class="fa-solid fa-stop text-[10px] mr-1"></i> Stop

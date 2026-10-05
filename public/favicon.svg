@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4338ca"/>
+      <stop offset="35%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+    <linearGradient id="boltGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e0f2fe"/>
+    </linearGradient>
+    <filter id="boltGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2.5" flood-color="#ffffff" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+  
+  <!-- Outer glowing rounded squircle -->
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#bgGrad)" stroke="#38bdf8" stroke-width="2" stroke-opacity="0.8"/>
+  
+  <!-- Inner subtle highlight -->
+  <rect x="4" y="4" width="56" height="56" rx="14" stroke="#ffffff" stroke-width="1" stroke-opacity="0.25"/>
+
+  <!-- High-contrast crisp electric lightning bolt -->
+  <path d="M36 10L18 33.5H33.5L28 54L48 28.5H33L36 10Z" fill="url(#boltGrad)" filter="url(#boltGlow)"/>
+</svg>

@@ -60,7 +60,13 @@ class DiscoveryEngine {
 
   setOverride(name, data) {
     const existing = this.overrides.get(name) || {};
-    const updated = { ...existing, ...data };
+    const cleaned = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (v !== undefined) {
+        cleaned[k] = v;
+      }
+    }
+    const updated = { ...existing, ...cleaned };
     this.overrides.set(name, updated);
     this.saveOverrides();
 
@@ -220,6 +226,8 @@ class DiscoveryEngine {
       category = 'schema';
     }
 
+    const defaultDebugPort = (config.debugPortDefaults && config.debugPortDefaults[name]) || config.defaultDebugPort || 5005;
+
     const baseInfo = {
       name,
       path: dirPath,
@@ -232,7 +240,10 @@ class DiscoveryEngine {
       isBuilt,
       port,
       category,
-      git: gitInfo
+      git: gitInfo,
+      debugEnabled: false,
+      debugPort: defaultDebugPort,
+      debugSuspend: false
     };
 
     // Apply any user overrides
