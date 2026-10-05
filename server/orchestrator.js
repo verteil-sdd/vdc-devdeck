@@ -51,15 +51,15 @@ class Orchestrator {
 
     const steps = [
       { name: 'verteil-ui', waitPort: false, delayMs: 1000, desc: 'Frontend Web Portal' },
-      { name: 'tomcat-vdc', waitPort: 8081, delayMs: 3000, desc: 'Apache Tomcat Container' },
+      { name: 'tomcat-vdc', waitPort: 2243, delayMs: 3000, desc: 'Apache Tomcat Container' },
       { name: 'vdc-configurator', waitPort: 8090, delayMs: 2000, desc: 'VDC Central Configurator' },
-      { name: 'auth-service', waitPort: 8082, delayMs: 2000, desc: 'Authentication & SSO Service' },
-      { name: 'agencymanagement-v1', waitPort: 8083, delayMs: 2000, desc: 'Agency Management V1' },
-      { name: 'entrygate-service', waitPort: 8080, delayMs: 2000, desc: 'Entrygate API Gateway' },
-      { name: 'ordermanagement-v1', waitPort: 8084, delayMs: 1500, desc: 'Order Management V1' },
-      { name: 'offermanagement-v1', waitPort: 8085, delayMs: 1500, desc: 'Offer Management V1' },
-      { name: 'payment', waitPort: 8089, delayMs: 1500, desc: 'Payment Service' },
-      { name: 'opendata', waitPort: 8088, delayMs: 1000, desc: 'OpenData Service' }
+      { name: 'auth-service', waitPort: 9000, delayMs: 2000, desc: 'Authentication & SSO Service' },
+      { name: 'agencymanagement-v1', waitPort: 8098, delayMs: 2000, desc: 'Agency Management V1' },
+      { name: 'entrygate-service', waitPort: 8081, delayMs: 2000, desc: 'Entrygate API Gateway' },
+      { name: 'ordermanagement-v1', waitPort: 9003, delayMs: 1500, desc: 'Order Management V1' },
+      { name: 'offermanagement-v1', waitPort: 8097, delayMs: 1500, desc: 'Offer Management V1' },
+      { name: 'payment', waitPort: 8051, delayMs: 1500, desc: 'Payment Service' },
+      { name: 'opendata', waitPort: 9010, delayMs: 1000, desc: 'OpenData Service' }
     ];
 
     this.totalSteps = steps.length;
@@ -89,17 +89,36 @@ class Orchestrator {
         });
 
         try {
+          // entrygate-service has a strict startup dependency on auth-service (fetches JWKS / OAuth metadata)
+          if (step.name === 'entrygate-service') {
+            this.emitProgress({
+              currentApp: step.name,
+              message: 'Ensuring auth-service is fully responsive before launching entrygate-service...'
+            });
+            const authReady = await supervisor.waitForHttp(
+              'http://localhost:9000/.well-known/oauth-authorization-server',
+              90000,
+              1000
+            );
+            if (authReady) {
+              console.log('[Orchestrator] auth-service is confirmed responsive and warmed up.');
+            } else {
+              console.warn('[Orchestrator] Warning: auth-service did not respond within timeout, starting entrygate-service anyway...');
+            }
+          }
+
           await supervisor.start(step.name);
 
           // If step specifies waiting for port, probe it
           if (step.waitPort) {
+            const portToProbe = repo.port || step.waitPort;
             this.emitProgress({
               currentApp: step.name,
-              message: `Waiting for ${step.name} to accept connections on port ${step.waitPort}...`
+              message: `Waiting for ${step.name} to accept connections on port ${portToProbe}...`
             });
-            const isReady = await supervisor.waitForPort(step.waitPort, 45000, 1000);
+            const isReady = await supervisor.waitForPort(portToProbe, 90000, 1000);
             if (isReady) {
-              console.log(`[Orchestrator] ${step.name} is ready on port ${step.waitPort}.`);
+              console.log(`[Orchestrator] ${step.name} is ready on port ${portToProbe}.`);
             } else {
               console.warn(`[Orchestrator] ${step.name} port wait timed out, continuing...`);
             }
@@ -143,8 +162,8 @@ class Orchestrator {
     this.status = 'STARTING';
 
     const steps = [
-      { name: 'ordermanagement', waitPort: 8086, delayMs: 1500, desc: 'Order Management V3' },
-      { name: 'offermanagement', waitPort: 8087, delayMs: 1500, desc: 'Offer Management V3' }
+      { name: 'ordermanagement', waitPort: 8091, delayMs: 1500, desc: 'Order Management V3' },
+      { name: 'offermanagement', waitPort: 8093, delayMs: 1500, desc: 'Offer Management V3' }
     ];
 
     this.totalSteps = steps.length;
@@ -173,7 +192,8 @@ class Orchestrator {
           await supervisor.start(step.name);
 
           if (step.waitPort) {
-            await supervisor.waitForPort(step.waitPort, 35000, 1000);
+            const portToProbe = repo.port || step.waitPort;
+            await supervisor.waitForPort(portToProbe, 35000, 1000);
           }
 
           if (step.delayMs) {

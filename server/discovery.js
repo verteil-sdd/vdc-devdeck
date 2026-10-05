@@ -500,16 +500,36 @@ class DiscoveryEngine {
       return config.portDefaults[name];
     }
 
+    // Check Angular configuration
+    const angularJsonPath = path.join(dirPath, 'angular.json');
+    if (fs.existsSync(angularJsonPath)) {
+      try {
+        const content = fs.readFileSync(angularJsonPath, 'utf8');
+        const portMatch = content.match(/"port"\s*:\s*(\d+)/);
+        if (portMatch) return parseInt(portMatch[1], 10);
+      } catch {}
+    }
+
+    // Check Tomcat server.xml
+    const serverXmlPath = path.join(dirPath, 'conf/server.xml');
+    if (fs.existsSync(serverXmlPath)) {
+      try {
+        const content = fs.readFileSync(serverXmlPath, 'utf8');
+        const portMatch = content.match(/<Connector[^>]+port="(\d+)"/);
+        if (portMatch) return parseInt(portMatch[1], 10);
+      } catch {}
+    }
+
     // Search application properties or yaml
     const checkFile = (relPath) => {
       const full = path.join(dirPath, relPath);
       if (!fs.existsSync(full)) return null;
       try {
         const content = fs.readFileSync(full, 'utf8');
-        const propMatch = content.match(/server\.port\s*=\s*(\d+)/);
+        const propMatch = content.match(/server\.port\s*[:=]\s*(\d+)/);
         if (propMatch) return parseInt(propMatch[1], 10);
 
-        const ymlMatch = content.match(/port\s*:\s*(\d+)/);
+        const ymlMatch = content.match(/server:\s*\n(?:\s+.*\n)*?\s+port:\s*(\d+)/) || content.match(/port\s*:\s*(\d+)/);
         if (ymlMatch) return parseInt(ymlMatch[1], 10);
       } catch {}
       return null;
@@ -518,8 +538,12 @@ class DiscoveryEngine {
     const candidates = [
       'src/main/resources/application.properties',
       'src/main/resources/application.yml',
+      'src/main/resources/application.yaml',
       `${name}-server/src/main/resources/application.properties`,
-      `${name}-server/src/main/resources/application.yml`
+      `${name}-server/src/main/resources/application.yml`,
+      `${name}-server/src/main/resources/application.yaml`,
+      'verteil-infra-entrygate-web/src/main/resources/application.yml',
+      'verteil-infra-entrygate-web/src/main/resources/application.yaml'
     ];
 
     for (const c of candidates) {

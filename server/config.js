@@ -64,20 +64,20 @@ export const config = {
 
   // Known default ports
   portDefaults: {
-    'verteil-ui': 4200,
-    'tomcat-vdc': 8081,
+    'verteil-ui': 5000,
+    'tomcat-vdc': 2243,
     'vdc-configurator': 8090,
-    'entrygate-service': 8080,
-    'auth-service': 8082,
-    'agencymanagement-v1': 8083,
-    'ordermanagement-v1': 8084,
-    'offermanagement-v1': 8085,
-    'ordermanagement': 8086,
-    'offermanagement': 8087,
-    'opendata': 8088,
-    'payment': 8089,
-    'connector-flyr': 8091,
-    'connector-flyr-v1': 8092
+    'entrygate-service': 8081,
+    'auth-service': 9000,
+    'agencymanagement-v1': 8098,
+    'ordermanagement-v1': 9003,
+    'offermanagement-v1': 8097,
+    'ordermanagement': 8091,
+    'offermanagement': 8093,
+    'opendata': 9010,
+    'payment': 8051,
+    'connector-flyr': 7070,
+    'connector-flyr-v1': 9024
   },
 
   // Default JDWP Remote Debugging Port configuration

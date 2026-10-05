@@ -102,7 +102,7 @@ case "$1" in
     killall -9 java 2>/dev/null || true
     pkill -9 -x java 2>/dev/null || true
     pkill -9 -f GradleDaemon 2>/dev/null || true
-    for port in 8080 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8091 8092 8097 9000 9003 9010 7003 2243 8000 8005 5005 5006 5007 5008 5009 5010 5011 5012 5013 5014 5015 5016; do
+    for port in 2243 5000 7003 7070 8000 8005 8051 8080 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8091 8092 8093 8097 8098 9000 9003 9010 9024 5005 5006 5007 5008 5009 5010 5011 5012 5013 5014 5015 5016; do
       fuser -k -9 ${port}/tcp 2>/dev/null || true
     done
     echo "✅ All Java processes terminated and ports released."

@@ -180,6 +180,18 @@ class SupervisorEngine {
     return false;
   }
 
+  async waitForHttp(url, maxWaitMs = 90000, intervalMs = 1000) {
+    const start = Date.now();
+    while (Date.now() - start < maxWaitMs) {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+        if (res.status < 500) return true;
+      } catch {}
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    return false;
+  }
+
   async start(repoName, options = {}) {
     const repo = discovery.get(repoName);
     if (!repo) {
@@ -286,7 +298,7 @@ class SupervisorEngine {
       `\n\x1b[36m=======================================================\x1b[0m\n` +
       `\x1b[1;36m[DevDeck]\x1b[0m Starting \x1b[1m${repoName}\x1b[0m at ${new Date().toLocaleTimeString()}\n` +
       (isNodeOrAngular
-        ? `\x1b[36m[DevDeck]\x1b[0m Project Type: ${repo.projectType.toUpperCase()} (Port: ${repo.port || 4200})\n`
+        ? `\x1b[36m[DevDeck]\x1b[0m Project Type: ${repo.projectType.toUpperCase()} (Port: ${repo.port || 5000})\n`
         : `\x1b[36m[DevDeck]\x1b[0m JDK: ${repo.jdk} (${javaBin})\n` +
           `\x1b[36m[DevDeck]\x1b[0m Anti-Lag JVM Flags: ${jvmFlags.filter((f) => !f.startsWith('-agentlib:jdwp')).join(' ')}\n` +
           (isDebug
@@ -333,9 +345,10 @@ class SupervisorEngine {
 
       let npmCmd;
       if (repo.projectType === 'angular') {
+        const portArg = String(repo.port || 5000);
         npmCmd = hasStart
-          ? ['run', 'start', '--', '--port', '4200']
-          : ['run', 'ng', '--', 'serve', '--port', '4200'];
+          ? ['run', 'start', '--', '--port', portArg]
+          : ['run', 'ng', '--', 'serve', '--port', portArg];
       } else {
         npmCmd = hasStart ? ['start'] : ['run', 'dev'];
       }
