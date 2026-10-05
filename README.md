@@ -15,7 +15,7 @@ VDC DevDeck is a lightweight, local-hosted developer portal and headless process
 ### 2. The 3 Startup Modes
 - **Mode 1: V1 Full Stack (`[⚡ Start V1 Stack]`)**:
   Sequenced, health-gated startup for:
-  `verteil-ui` ➔ `tomcat-vdc` ➔ `vdc-configurator` ➔ `auth-service` ➔ `agencymanagement-v1` ➔ `entrygate-service` ➔ `ordermanagement-v1` ➔ `offermanagement-v1` ➔ `opendata`.
+  `verteil-ui` ➔ `tomcat-vdc` ➔ `vdc-configurator` ➔ `auth-service` ➔ `agencymanagement-v1` ➔ `entrygate-service` ➔ `ordermanagement-v1` ➔ `offermanagement-v1` ➔ `payment` ➔ `opendata`.
 - **Mode 2: V3 NDC Stack (`[🚀 Start V3 Stack]`)**:
   Fast startup for next-gen microservices:
   `ordermanagement` (V3) ➔ `offermanagement` (V3).

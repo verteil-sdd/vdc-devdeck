@@ -39,7 +39,17 @@ class DiscoveryEngine {
     try {
       if (fs.existsSync(config.overridesFile)) {
         const data = JSON.parse(fs.readFileSync(config.overridesFile, 'utf8'));
+        let modified = false;
+        for (const [k, v] of Object.entries(data)) {
+          if (v && v.debugEnabled !== undefined) {
+            delete v.debugEnabled;
+            modified = true;
+          }
+        }
         this.overrides = new Map(Object.entries(data));
+        if (modified) {
+          this.saveOverrides();
+        }
       }
     } catch (err) {
       console.warn('[Discovery] Failed to load overrides:', err.message);
@@ -62,17 +72,19 @@ class DiscoveryEngine {
     const existing = this.overrides.get(name) || {};
     const cleaned = {};
     for (const [k, v] of Object.entries(data)) {
-      if (v !== undefined) {
+      if (v !== undefined && k !== 'debugEnabled') {
         cleaned[k] = v;
       }
     }
     const updated = { ...existing, ...cleaned };
+    delete updated.debugEnabled;
     this.overrides.set(name, updated);
     this.saveOverrides();
 
     if (this.repositories.has(name)) {
       const repo = this.repositories.get(name);
       Object.assign(repo, updated);
+      repo.debugEnabled = false;
       this.notify('repo:updated', repo);
     }
   }
@@ -248,7 +260,7 @@ class DiscoveryEngine {
 
     // Apply any user overrides
     const override = this.overrides.get(name) || {};
-    return { ...baseInfo, ...override };
+    return { ...baseInfo, ...override, debugEnabled: false };
   }
 
   findSdkForVersion(ver) {

@@ -200,8 +200,8 @@ class SupervisorEngine {
       this.processes.set(repoName, proc);
     }
 
-    // Determine Debug Mode & Port
-    const isDebug = options.debug !== undefined ? !!options.debug : !!repo.debugEnabled;
+    // Determine Debug Mode & Port: Only enabled if explicitly requested (e.g. clicking debug in UI)
+    const isDebug = !!options.debug;
     const defaultDebugPort = (config.debugPortDefaults && config.debugPortDefaults[repoName]) || config.defaultDebugPort || 5005;
     const debugPort = options.debugPort ? parseInt(options.debugPort, 10) : (repo.debugPort || defaultDebugPort);
     const suspend = options.suspend !== undefined ? !!options.suspend : (repo.debugSuspend || false);
@@ -221,6 +221,28 @@ class SupervisorEngine {
     repo.jdk = discovery.detectJdk(repo.path, repo.name);
     const { javaHome, javaBin } = this.resolveJavaPath(repo.jdk);
     this.appendLog(repoName, `\x1b[34m[DevDeck]\x1b[0m Resolved JDK: ${repo.jdk} (${javaBin})\n`);
+
+    // Ensure target ports are free before starting (auto-free ghost processes)
+    if (repo.port && repo.projectType !== 'node' && repo.projectType !== 'angular') {
+      const active = await this.checkPortActive(repo.port, 300);
+      if (active) {
+        this.appendLog(repoName, `\x1b[33m[DevDeck]\x1b[0m Port ${repo.port} is currently occupied by an orphaned process. Releasing port...\n`);
+        try {
+          await execAsync(`fuser -k -9 ${repo.port}/tcp 2>/dev/null || true`);
+          await new Promise((r) => setTimeout(r, 600));
+        } catch {}
+      }
+    }
+    if (isDebug && debugPort) {
+      const dbgActive = await this.checkPortActive(debugPort, 300);
+      if (dbgActive) {
+        this.appendLog(repoName, `\x1b[33m[DevDeck]\x1b[0m Debug port ${debugPort} is occupied. Releasing port...\n`);
+        try {
+          await execAsync(`fuser -k -9 ${debugPort}/tcp 2>/dev/null || true`);
+          await new Promise((r) => setTimeout(r, 600));
+        } catch {}
+      }
+    }
 
     // Prepare anti-lag JVM flags
     const isHeavy = repo.name === 'vdc-configurator' || repo.name === 'tomcat-vdc';
@@ -453,49 +475,64 @@ class SupervisorEngine {
   }
 
   async stop(repoName) {
+    const repo = discovery.get(repoName);
     const proc = this.processes.get(repoName);
-    if (!proc || !proc.child || proc.status === 'STOPPED') {
-      if (proc) {
-        proc.status = 'STOPPED';
-        proc.debugActive = false;
-      }
-      this.emit('status:changed', { name: repoName, status: 'STOPPED', debugActive: false, debugPort: null });
-      return { success: true, message: `${repoName} is already stopped.` };
-    }
+    const pid = proc ? proc.pid : null;
 
-    const pid = proc.pid;
-    this.appendLog(repoName, `\x1b[33m[DevDeck]\x1b[0m Sending SIGTERM to process group -${pid}...\n`);
+    if (pid) {
+      this.appendLog(repoName, `\x1b[33m[DevDeck]\x1b[0m Sending SIGTERM to process group -${pid}...\n`);
 
-    try {
-      // Kill entire process group
-      process.kill(-pid, 'SIGTERM');
-    } catch {
       try {
-        proc.child.kill('SIGTERM');
-      } catch {}
-    }
-
-    // Wait up to 5s, else SIGKILL
-    for (let i = 0; i < 10; i++) {
-      await new Promise((r) => setTimeout(r, 500));
-      if (proc.status === 'STOPPED') break;
-    }
-
-    if (proc.status !== 'STOPPED' && proc.child) {
-      this.appendLog(repoName, `\x1b[31m[DevDeck]\x1b[0m Process did not terminate; forcing SIGKILL...\n`);
-      try {
-        process.kill(-pid, 'SIGKILL');
+        // Kill entire process group
+        process.kill(-pid, 'SIGTERM');
       } catch {
         try {
-          proc.child.kill('SIGKILL');
+          if (proc.child) proc.child.kill('SIGTERM');
+        } catch {}
+      }
+
+      // Wait up to 3s, else SIGKILL
+      for (let i = 0; i < 6; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        if (proc.status === 'STOPPED') break;
+      }
+
+      if (proc.status !== 'STOPPED' && proc.child) {
+        this.appendLog(repoName, `\x1b[31m[DevDeck]\x1b[0m Process did not terminate; forcing SIGKILL...\n`);
+        try {
+          process.kill(-pid, 'SIGKILL');
+        } catch {
+          try {
+            proc.child.kill('SIGKILL');
+          } catch {}
+        }
+      }
+    }
+
+    // Force-release any lingering processes holding this service's HTTP or debug port
+    if (repo) {
+      if (repo.port) {
+        try {
+          await execAsync(`fuser -k -9 ${repo.port}/tcp 2>/dev/null || true`);
+        } catch {}
+      }
+      if (repo.debugPort) {
+        try {
+          await execAsync(`fuser -k -9 ${repo.debugPort}/tcp 2>/dev/null || true`);
         } catch {}
       }
     }
 
-    proc.status = 'STOPPED';
-    proc.pid = null;
-    proc.child = null;
-    proc.debugActive = false;
+    if (proc) {
+      if (proc.fileStream) {
+        try { proc.fileStream.end(); } catch {}
+      }
+      proc.status = 'STOPPED';
+      proc.pid = null;
+      proc.child = null;
+      proc.debugActive = false;
+      proc.debugPort = null;
+    }
     this.emit('status:changed', { name: repoName, status: 'STOPPED', debugActive: false, debugPort: null });
     return { success: true };
   }
@@ -639,6 +676,72 @@ class SupervisorEngine {
     }
     await Promise.all(stopPromises);
     return { success: true };
+  }
+
+  async killAllJava() {
+    console.log('[Supervisor] KILL SWITCH ACTIVATED: Terminating all Java processes...');
+    let killedCount = 0;
+
+    // 1. Mark all supervisor processes as STOPPED & clean state
+    for (const [name, proc] of this.processes.entries()) {
+      if (proc.fileStream) {
+        try { proc.fileStream.end(); } catch {}
+      }
+      proc.status = 'STOPPED';
+      proc.pid = null;
+      proc.child = null;
+      proc.debugActive = false;
+      proc.debugPort = null;
+      this.emit('status:changed', {
+        name,
+        status: 'STOPPED',
+        debugActive: false,
+        debugPort: null
+      });
+    }
+
+    // 2. Count active java processes before killing
+    try {
+      const { stdout } = await execAsync("pgrep -x java | wc -l");
+      killedCount = parseInt(stdout.trim(), 10) || 0;
+    } catch {}
+
+    // 3. Force kill all java and gradle daemon processes
+    try {
+      await execAsync('killall -9 java 2>/dev/null || true');
+    } catch {}
+    try {
+      await execAsync('pkill -9 -x java 2>/dev/null || true');
+    } catch {}
+    try {
+      await execAsync('pkill -9 -f GradleDaemon 2>/dev/null || true');
+    } catch {}
+
+    // 4. Force free all known microservice ports and debug ports
+    const portsToFree = new Set();
+    Object.values(config.portDefaults || {}).forEach((p) => portsToFree.add(p));
+    Object.values(config.debugPortDefaults || {}).forEach((p) => portsToFree.add(p));
+    // Additional common microservice ports in verteil stack
+    [8000, 8005, 8080, 8081, 8082, 8083, 8084, 8085, 8086, 8087, 8088, 8089, 8090, 8091, 8092, 8097, 9000, 9003, 9010, 7003, 2243].forEach((p) => portsToFree.add(p));
+
+    for (const r of discovery.getAll()) {
+      if (r.port) portsToFree.add(r.port);
+      if (r.debugPort) portsToFree.add(r.debugPort);
+    }
+
+    try {
+      const fuserArgs = Array.from(portsToFree).map((p) => `${p}/tcp`).join(' ');
+      await execAsync(`fuser -k -9 ${fuserArgs} 2>/dev/null || true`);
+    } catch {}
+
+    await new Promise((r) => setTimeout(r, 600));
+
+    console.log(`[Supervisor] KILL SWITCH COMPLETE: Terminated ~${killedCount} Java processes and cleared ${portsToFree.size} ports.`);
+    return {
+      success: true,
+      killedCount,
+      portsClearedCount: portsToFree.size
+    };
   }
 }
 

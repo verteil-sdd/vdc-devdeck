@@ -117,14 +117,14 @@ app.get('/api/repos/:name', (req, res) => {
 });
 
 app.post('/api/repos/:name/override', (req, res) => {
-  const { jdk, port, buildCmd, runCmd, targetJar, debugEnabled, debugPort, debugSuspend } = req.body;
+  const { jdk, port, buildCmd, runCmd, targetJar, debugPort, debugSuspend } = req.body;
   discovery.setOverride(req.params.name, {
     jdk,
     port,
     buildCmd,
     runCmd,
     targetJar,
-    debugEnabled,
+    debugEnabled: false,
     debugPort: debugPort !== undefined ? parseInt(debugPort, 10) : undefined,
     debugSuspend
   });
@@ -169,18 +169,14 @@ app.post('/api/repos/:name/debug', async (req, res) => {
     if (!repo) return res.status(404).json({ success: false, message: 'Repo not found' });
 
     const portNum = debugPort ? parseInt(debugPort, 10) : (repo.debugPort || config.defaultDebugPort || 5005);
-    discovery.setOverride(name, {
-      debugEnabled: true,
-      debugPort: portNum,
-      debugSuspend: suspend !== undefined ? !!suspend : (repo.debugSuspend || false)
-    });
+    const suspendVal = suspend !== undefined ? !!suspend : (repo.debugSuspend || false);
 
     const currentStatus = supervisor.getStatus(name);
     let result;
     if (currentStatus === 'RUNNING' || currentStatus === 'STARTING') {
-      result = await supervisor.restart(name, { debug: true, debugPort: portNum, suspend });
+      result = await supervisor.restart(name, { debug: true, debugPort: portNum, suspend: suspendVal });
     } else {
-      result = await supervisor.start(name, { debug: true, debugPort: portNum, suspend });
+      result = await supervisor.start(name, { debug: true, debugPort: portNum, suspend: suspendVal });
     }
     res.json({ success: true, ...result, debugPort: portNum });
   } catch (err) {
@@ -248,6 +244,19 @@ app.post('/api/stack/v3', async (req, res) => {
 app.post('/api/stack/stop-all', async (req, res) => {
   try {
     const result = await orchestrator.stopAll();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/system/kill-all-java', async (req, res) => {
+  try {
+    const result = await supervisor.killAllJava();
+    orchestrator.activeStack = null;
+    orchestrator.status = 'IDLE';
+    orchestrator.currentStep = 0;
+    orchestrator.emitProgress({ message: 'Kill Switch: All Java processes terminated and ports released.', status: 'IDLE' });
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

@@ -27,6 +27,7 @@ class App {
     this.btnLaunchV1 = document.getElementById('btnLaunchV1');
     this.btnLaunchV3 = document.getElementById('btnLaunchV3');
     this.btnStopAll = document.getElementById('btnStopAll');
+    this.btnKillJava = document.getElementById('btnKillJava');
     this.btnRescan = document.getElementById('btnRescan');
 
     // Metrics
@@ -73,7 +74,6 @@ class App {
     this.modalJdkSelect = document.getElementById('modalJdkSelect');
     this.modalPortInput = document.getElementById('modalPortInput');
     this.modalTargetJarInput = document.getElementById('modalTargetJarInput');
-    this.modalDebugToggle = document.getElementById('modalDebugToggle');
     this.modalDebugPortInput = document.getElementById('modalDebugPortInput');
     this.modalDebugSuspendInput = document.getElementById('modalDebugSuspendInput');
     this.modalDebugPreview = document.getElementById('modalDebugPreview');
@@ -92,7 +92,6 @@ class App {
     this.quickDebugCloseBtn = document.getElementById('quickDebugCloseBtn');
     this.quickDebugCancelBtn = document.getElementById('quickDebugCancelBtn');
     this.quickDebugSubmitText = document.getElementById('quickDebugSubmitText');
-    this.quickDebugSaveDefault = document.getElementById('quickDebugSaveDefault');
   }
 
   initEventListeners() {
@@ -123,6 +122,9 @@ class App {
     this.btnLaunchV1.addEventListener('click', () => this.launchStack('v1'));
     this.btnLaunchV3.addEventListener('click', () => this.launchStack('v3'));
     this.btnStopAll.addEventListener('click', () => this.stopAll());
+    if (this.btnKillJava) {
+      this.btnKillJava.addEventListener('click', () => this.killJava());
+    }
     this.btnRescan.addEventListener('click', () => this.rescanRepos());
     this.dismissStackBanner.addEventListener('click', () => {
       this.stackProgressBanner.classList.add('hidden');
@@ -183,9 +185,6 @@ class App {
     }
     if (this.modalDebugSuspendInput) {
       this.modalDebugSuspendInput.addEventListener('change', () => this.updateModalDebugPreview());
-    }
-    if (this.modalDebugToggle) {
-      this.modalDebugToggle.addEventListener('change', () => this.updateModalDebugPreview());
     }
 
     // Quick Debug Modal
@@ -441,6 +440,42 @@ class App {
     }
   }
 
+  async killJava() {
+    if (!confirm('⚠️ KILL SWITCH: Are you sure you want to force-terminate ALL Java processes and free all microservice ports?')) {
+      return;
+    }
+    const btn = this.btnKillJava;
+    const originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-xs"></i> <span>Killing...</span>`;
+    }
+
+    try {
+      const res = await fetch('/api/system/kill-all-java', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        // Update all repos to STOPPED locally immediately
+        for (const [name, repo] of this.repos.entries()) {
+          repo.status = 'STOPPED';
+          repo.debugActive = false;
+        }
+        if (this.metricJvms) this.metricJvms.textContent = '0';
+        this.render();
+        alert(`⚡ Kill Switch Executed: Terminated ~${data.killedCount || 0} Java process(es) and cleared ports.`);
+      } else {
+        alert(`Failed to execute kill switch: ${data.message}`);
+      }
+    } catch (err) {
+      alert(`Kill switch error: ${err.message}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    }
+  }
+
   async rescanRepos() {
     this.btnRescan.innerHTML = `<i class="fa-solid fa-arrows-rotate fa-spin text-xs"></i> Scanning...`;
     try {
@@ -509,13 +544,6 @@ class App {
     const port = this.modalDebugPortInput ? (this.modalDebugPortInput.value || '5005') : '5005';
     const suspend = this.modalDebugSuspendInput && this.modalDebugSuspendInput.checked ? 'y' : 'n';
     this.modalDebugPreview.textContent = `-agentlib:jdwp=transport=dt_socket,server=y,suspend=${suspend},address=*:${port}`;
-    if (this.modalDebugFields && this.modalDebugToggle) {
-      if (this.modalDebugToggle.checked) {
-        this.modalDebugFields.classList.remove('opacity-40', 'pointer-events-none');
-      } else {
-        this.modalDebugFields.classList.add('opacity-40', 'pointer-events-none');
-      }
-    }
   }
 
   updateQuickDebugPreview() {
@@ -533,7 +561,6 @@ class App {
     this.quickDebugForm.dataset.repo = repo.name;
     this.quickDebugPortInput.value = repo.debugPort || 5005;
     this.quickDebugSuspendInput.checked = !!repo.debugSuspend;
-    if (this.quickDebugSaveDefault) this.quickDebugSaveDefault.checked = true;
 
     const isRunning = repo.status === 'RUNNING' || repo.status === 'STARTING';
     if (this.quickDebugSubmitText) {
@@ -559,25 +586,11 @@ class App {
     const name = this.quickDebugForm.dataset.repo;
     const port = parseInt(this.quickDebugPortInput.value, 10) || 5005;
     const suspend = this.quickDebugSuspendInput.checked;
-    const saveDefault = this.quickDebugSaveDefault ? this.quickDebugSaveDefault.checked : true;
 
     this.closeQuickDebugModal();
     this.openTerminal(name);
 
     try {
-      if (saveDefault) {
-        // Save as default in repo configuration
-        await fetch(`/api/repos/${name}/override`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            debugEnabled: true,
-            debugPort: port,
-            debugSuspend: suspend
-          })
-        });
-      }
-
       const res = await fetch(`/api/repos/${name}/debug`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -601,9 +614,6 @@ class App {
     this.modalJdkSelect.value = repo.jdk || '21.0.1-amzn';
     this.modalPortInput.value = repo.port || '';
     this.modalTargetJarInput.value = repo.targetJar || '';
-    if (this.modalDebugToggle) {
-      this.modalDebugToggle.checked = !!repo.debugEnabled;
-    }
     if (this.modalDebugPortInput) {
       this.modalDebugPortInput.value = repo.debugPort || 5005;
     }
@@ -626,7 +636,7 @@ class App {
       jdk: this.modalJdkSelect.value,
       port: this.modalPortInput.value ? parseInt(this.modalPortInput.value, 10) : null,
       targetJar: this.modalTargetJarInput.value.trim() || null,
-      debugEnabled: this.modalDebugToggle ? this.modalDebugToggle.checked : false,
+      debugEnabled: false,
       debugPort: this.modalDebugPortInput && this.modalDebugPortInput.value ? parseInt(this.modalDebugPortInput.value, 10) : 5005,
       debugSuspend: this.modalDebugSuspendInput ? this.modalDebugSuspendInput.checked : false
     };
@@ -932,15 +942,11 @@ class App {
     // 2. Update debug indicator in header
     const debugBadgeEl = card.querySelector('.header-debug-badge');
     const isDebugActive = !!repo.debugActive;
-    const isDebugEnabled = !!repo.debugEnabled;
     const debugPort = repo.debugPort || 5005;
     if (debugBadgeEl) {
       if (isDebugActive) {
         debugBadgeEl.className = 'header-debug-badge text-[10px] font-mono font-bold text-fuchsia-300 bg-fuchsia-950/80 px-2 py-0.5 rounded-full border border-fuchsia-500/60 shadow-sm shadow-fuchsia-900/40 flex items-center gap-1 pulse-purple';
         debugBadgeEl.innerHTML = `<i class="fa-solid fa-bug text-[10px] text-fuchsia-400"></i> :${debugPort}`;
-      } else if (isDebugEnabled) {
-        debugBadgeEl.className = 'header-debug-badge text-[10px] font-mono text-fuchsia-400/90 bg-fuchsia-950/40 px-1.5 py-0.5 rounded border border-fuchsia-800/40 flex items-center gap-1';
-        debugBadgeEl.innerHTML = `<i class="fa-solid fa-bug text-[9px]"></i> :${debugPort}`;
       } else {
         debugBadgeEl.className = 'header-debug-badge hidden';
       }
@@ -1092,7 +1098,6 @@ class App {
     const isBuilding = repo.status === 'BUILDING';
     const isPulling = repo.status === 'PULLING';
     const isDebugActive = !!repo.debugActive;
-    const isDebugEnabled = !!repo.debugEnabled;
     const debugPort = repo.debugPort || 5005;
 
     const branch = repo.git && repo.git.branch ? repo.git.branch : 'main';
@@ -1132,7 +1137,7 @@ class App {
                   ${catLabel}
                 </span>
                 ${repo.port ? `<span class="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-800/40">:${repo.port}</span>` : ''}
-                <span class="header-debug-badge ${isDebugActive ? 'text-[10px] font-mono font-bold text-fuchsia-300 bg-fuchsia-950/80 px-2 py-0.5 rounded-full border border-fuchsia-500/60 shadow-sm shadow-fuchsia-900/40 flex items-center gap-1 pulse-purple' : isDebugEnabled ? 'text-[10px] font-mono text-fuchsia-400/90 bg-fuchsia-950/40 px-1.5 py-0.5 rounded border border-fuchsia-800/40 flex items-center gap-1' : 'hidden'}" title="Remote Debugger (Port: ${debugPort})">
+                <span class="header-debug-badge ${isDebugActive ? 'text-[10px] font-mono font-bold text-fuchsia-300 bg-fuchsia-950/80 px-2 py-0.5 rounded-full border border-fuchsia-500/60 shadow-sm shadow-fuchsia-900/40 flex items-center gap-1 pulse-purple' : 'hidden'}" title="Remote Debugger (Port: ${debugPort})">
                   <i class="fa-solid fa-bug text-[10px] text-fuchsia-400"></i> :${debugPort}
                 </span>
               </div>
@@ -1171,15 +1176,15 @@ class App {
               </span>
             </div>
 
-            <!-- JDWP Debug Row (if enabled or active) -->
-            ${(isDebugEnabled || isDebugActive) ? `
-              <div class="flex items-center justify-between text-[11px] ${isDebugActive ? 'text-fuchsia-300' : 'text-slate-400'}">
+            <!-- JDWP Debug Row (if active) -->
+            ${isDebugActive ? `
+              <div class="flex items-center justify-between text-[11px] text-fuchsia-300">
                 <span class="flex items-center gap-1">
                   <i class="fa-solid fa-bug text-[10px] text-fuchsia-400"></i>
                   <span>JDWP Debug:</span>
                 </span>
-                <span class="font-mono text-[10px] ${isDebugActive ? 'text-fuchsia-300 font-bold' : 'text-slate-400'}">
-                  :${debugPort} ${isDebugActive ? '<span class="text-[9px] bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-700/60 px-1 rounded ml-0.5">ACTIVE</span>' : ''}
+                <span class="font-mono text-[10px] text-fuchsia-300 font-bold">
+                  :${debugPort} <span class="text-[9px] bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-700/60 px-1 rounded ml-0.5">ACTIVE</span>
                 </span>
               </div>
             ` : ''}
