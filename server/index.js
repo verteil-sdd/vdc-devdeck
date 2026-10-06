@@ -10,6 +10,7 @@ import { supervisor } from './supervisor.js';
 import { orchestrator } from './orchestrator.js';
 import { awsManager } from './awsManager.js';
 import { systemMetrics } from './systemMetrics.js';
+import { settings } from './settings.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,6 +74,8 @@ supervisor.onEvent((event, data) => {
 orchestrator.onEvent((data) => {
   broadcast('stack:progress', data);
 });
+awsManager.onEvent((data) => broadcast('aws:updated', data));
+setInterval(() => broadcast('aws:updated', awsManager.getStatus()), 30000);
 
 // Periodic system metrics broadcast (every 2.5 seconds)
 setInterval(async () => {
@@ -219,7 +222,44 @@ app.post('/api/repos/:name/logs/clear', (req, res) => {
 });
 
 // 4. Stacks (V1, V3, Stop All)
+app.get('/api/stacks', (req, res) => {
+  res.json({ success: true, stacks: settings.data.customStacks });
+});
+
+app.post('/api/stacks', (req, res) => {
+  try {
+    const stack = settings.saveStack(req.body || {}, discovery.getAll().map((repo) => repo.name));
+    broadcast('stacks:updated', settings.data.customStacks);
+    res.json({ success: true, stack });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+app.delete('/api/stacks/:id', (req, res) => {
+  try {
+    settings.deleteStack(req.params.id);
+    broadcast('stacks:updated', settings.data.customStacks);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/stacks/:id/start', (req, res) => {
+  const stack = settings.data.customStacks.find((item) => item.id === req.params.id);
+  if (!stack) return res.status(404).json({ success: false, message: 'Stack not found.' });
+  if (orchestrator.status === 'STARTING' || orchestrator.customRun) {
+    return res.status(409).json({ success: false, message: 'A stack startup sequence is already in progress.' });
+  }
+  const missing = stack.services.filter((name) => !discovery.get(name));
+  if (missing.length) return res.status(400).json({ success: false, message: `Repositories no longer available: ${missing.join(', ')}` });
+  orchestrator.startCustomStack(stack).catch((err) => console.error('[Orchestrator]', err.message));
+  res.json({ success: true, message: `${stack.name} startup initiated.` });
+});
+
 app.post('/api/stack/v1', async (req, res) => {
+  if (orchestrator.status === 'STARTING' || orchestrator.customRun) return res.status(409).json({ success: false, message: 'A stack startup sequence is already in progress.' });
   try {
     orchestrator.startV1Stack().catch((err) => {
       console.error('V1 Stack launch failed:', err.message);
@@ -231,6 +271,7 @@ app.post('/api/stack/v1', async (req, res) => {
 });
 
 app.post('/api/stack/v3', async (req, res) => {
+  if (orchestrator.status === 'STARTING' || orchestrator.customRun) return res.status(409).json({ success: false, message: 'A stack startup sequence is already in progress.' });
   try {
     orchestrator.startV3Stack().catch((err) => {
       console.error('V3 Stack launch failed:', err.message);
@@ -252,8 +293,10 @@ app.post('/api/stack/stop-all', async (req, res) => {
 
 app.post('/api/system/kill-all-java', async (req, res) => {
   try {
+    if (orchestrator.customRun) orchestrator.customRun.cancelled = true;
     const result = await supervisor.killAllJava();
     orchestrator.activeStack = null;
+    orchestrator.stackName = null;
     orchestrator.status = 'IDLE';
     orchestrator.currentStep = 0;
     orchestrator.emitProgress({ message: 'Kill Switch: All Java processes terminated and ports released.', status: 'IDLE' });
@@ -283,17 +326,19 @@ app.post('/api/aws/refresh', async (req, res) => {
     broadcast('aws:updated', status);
     res.json({ success: true, status });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: err.message, status: awsManager.getStatus() });
   }
 });
 
 app.post('/api/aws/profile', async (req, res) => {
+  if (awsManager.refreshPromise) return res.status(409).json({ success: false, message: 'Wait for the current AWS refresh to finish.', status: awsManager.getStatus() });
   try {
-    const { profile } = req.body;
-    if (profile && typeof profile === 'string') {
-      config.awsProfile = profile.trim();
-      process.env.AWS_PROFILE = config.awsProfile;
-    }
+    const { profile, region } = req.body || {};
+    awsManager.configure(profile, region);
+  } catch (err) {
+    return res.status(400).json({ success: false, message: err.message, status: awsManager.getStatus() });
+  }
+  try {
     const status = await awsManager.refreshCredentials();
     broadcast('aws:updated', status);
     res.json({ success: true, status });
@@ -310,8 +355,8 @@ app.get('*', (req, res) => {
 // Boot server
 async function startServer() {
   console.log('[DevDeck] Starting VDC DevDeck Server...');
-  await awsManager.init();
   await discovery.init();
+  void awsManager.init();
 
   server.listen(config.port, config.host, () => {
     console.log(`\n========================================================`);

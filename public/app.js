@@ -1,4 +1,5 @@
 import { ansiToHtml } from './ansi.js';
+import { SettingsUI } from './settingsUi.js';
 
 class App {
   constructor() {
@@ -14,7 +15,9 @@ class App {
     this.ws = null;
 
     this.initElements();
+    this.initTheme();
     this.initEventListeners();
+    this.settingsUI = new SettingsUI(this);
     this.connectWebSocket();
     this.fetchInitialData();
   }
@@ -94,6 +97,26 @@ class App {
     this.quickDebugSubmitText = document.getElementById('quickDebugSubmitText');
   }
 
+  initTheme() {
+    const button = document.getElementById('btnTheme');
+    const applyTheme = (theme) => {
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.classList.toggle('dark', theme === 'dark');
+      const label = `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`;
+      button.title = label;
+      button.setAttribute('aria-label', label);
+      button.innerHTML = `<i class="fa-solid fa-${theme === 'dark' ? 'sun' : 'moon'}" aria-hidden="true"></i>`;
+    };
+    applyTheme(document.documentElement.dataset.theme || 'dark');
+    button.addEventListener('click', () => {
+      const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      applyTheme(theme);
+      try {
+        localStorage.setItem('devdeck-theme', theme);
+      } catch { /* The toggle still works when storage is unavailable. */ }
+    });
+  }
+
   initEventListeners() {
     // Search
     this.searchInput.addEventListener('input', (e) => {
@@ -102,7 +125,7 @@ class App {
     });
 
     window.addEventListener('keydown', (e) => {
-      if (e.key === '/' && document.activeElement !== this.searchInput) {
+      if (e.key === '/' && !e.target.closest('input, textarea, select, [contenteditable]')) {
         e.preventDefault();
         this.searchInput.focus();
       }
@@ -112,8 +135,12 @@ class App {
     this.categoryFilters.addEventListener('click', (e) => {
       const btn = e.target.closest('.filter-btn');
       if (!btn) return;
-      document.querySelectorAll('.filter-btn').forEach((b) => b.classList.remove('active', 'bg-indigo-600', 'text-white'));
-      btn.classList.add('active', 'bg-indigo-600', 'text-white');
+      document.querySelectorAll('.filter-btn').forEach((b) => {
+        b.classList.remove('active', 'bg-indigo-600', 'text-white');
+        b.setAttribute('aria-pressed', 'false');
+      });
+      btn.classList.add('active');
+      btn.setAttribute('aria-pressed', 'true');
       this.activeFilter = btn.dataset.filter;
       this.render();
     });
@@ -315,6 +342,10 @@ class App {
         this.updateAwsStatus(data);
         break;
 
+      case 'stacks:updated':
+        this.settingsUI.setStacks(data);
+        break;
+
       case 'stack:progress':
         this.updateStackProgress(data);
         break;
@@ -360,18 +391,21 @@ class App {
 
   updateAwsStatus(aws) {
     if (!aws) return;
-    const profile = aws.profile || 'sdd';
-    if (aws.isValid) {
+    this.awsStatus = aws;
+    const profile = aws.profile || 'unconfigured';
+    this.awsBadge.disabled = !!aws.isRefreshing;
+    if (aws.isRefreshing) {
+      this.awsStatusText.textContent = `Refreshing token (${profile})...`;
+      this.awsStatusText.className = 'text-amber-400 text-xs';
+      this.awsRefreshIcon.classList.add('fa-spin');
+    } else if (aws.isValid) {
       this.awsStatusText.textContent = `CodeArtifact: Valid (${profile})`;
       this.awsStatusText.className = 'text-emerald-400 text-xs';
       this.awsRefreshIcon.classList.remove('fa-spin');
       if (this.awsBadge) this.awsBadge.title = `AWS Profile: ${profile} (Valid). Click to refresh token.`;
-    } else if (aws.isRefreshing) {
-      this.awsStatusText.textContent = `Refreshing token (${profile})...`;
-      this.awsStatusText.className = 'text-amber-400 text-xs';
-      this.awsRefreshIcon.classList.add('fa-spin');
     } else {
-      this.awsStatusText.textContent = `Token Expired (${profile})`;
+      const label = aws.lastError ? 'AWS setup failed' : aws.hasCodeArtifactToken ? 'AWS refresh needed' : 'AWS not configured';
+      this.awsStatusText.textContent = `${label} (${profile})`;
       this.awsStatusText.className = 'text-rose-400 text-xs';
       this.awsRefreshIcon.classList.remove('fa-spin');
       if (this.awsBadge) this.awsBadge.title = aws.lastError || `Click to refresh token for profile '${profile}'`;
@@ -379,6 +413,7 @@ class App {
   }
 
   async refreshAws() {
+    this.awsBadge.disabled = true;
     this.awsStatusText.textContent = 'Refreshing...';
     this.awsRefreshIcon.classList.add('fa-spin');
     try {
@@ -386,21 +421,24 @@ class App {
       if (res && res.status) {
         this.updateAwsStatus(res.status);
       }
+      if (!res.success) throw new Error(res.message || 'AWS refresh failed');
     } catch (err) {
       alert(`AWS Refresh error: ${err.message}`);
     } finally {
       this.awsRefreshIcon.classList.remove('fa-spin');
+      this.awsBadge.disabled = false;
     }
   }
 
   updateStackProgress(stack) {
+    clearTimeout(this.stackBannerTimer);
     if (!stack || stack.status === 'IDLE') {
       this.stackProgressBanner.classList.add('hidden');
       return;
     }
 
     this.stackProgressBanner.classList.remove('hidden');
-    const stackName = stack.activeStack === 'v1' ? 'V1 Full Stack' : 'V3 NDC Stack';
+    const stackName = stack.stackName || (stack.activeStack === 'v1' ? 'V1 Full Stack' : stack.activeStack === 'v3' ? 'V3 NDC Stack' : 'Custom stack');
     this.stackProgressTitle.textContent = `Orchestrating ${stackName}`;
 
     if (stack.totalSteps > 0) {
@@ -412,7 +450,7 @@ class App {
     this.stackProgressMessage.textContent = stack.message || 'Starting applications...';
 
     if (stack.status === 'RUNNING') {
-      setTimeout(() => this.stackProgressBanner.classList.add('hidden'), 5000);
+      this.stackBannerTimer = setTimeout(() => this.stackProgressBanner.classList.add('hidden'), 5000);
     }
   }
 
@@ -455,7 +493,7 @@ class App {
     const originalText = btn ? btn.innerHTML : '';
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-xs"></i> <span>Killing...</span>`;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>`;
     }
 
     try {
@@ -484,7 +522,8 @@ class App {
   }
 
   async rescanRepos() {
-    this.btnRescan.innerHTML = `<i class="fa-solid fa-arrows-rotate fa-spin text-xs"></i> Scanning...`;
+    this.btnRescan.disabled = true;
+    this.btnRescan.innerHTML = `<i class="fa-solid fa-arrows-rotate fa-spin" aria-hidden="true"></i>`;
     try {
       const res = await fetch('/api/repos/rescan', { method: 'POST' });
       const data = await res.json();
@@ -493,7 +532,8 @@ class App {
         this.render();
       }
     } finally {
-      this.btnRescan.innerHTML = `<i class="fa-solid fa-arrows-rotate text-xs"></i> <span>Rescan</span>`;
+      this.btnRescan.disabled = false;
+      this.btnRescan.innerHTML = `<i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>`;
     }
   }
 
@@ -753,13 +793,13 @@ class App {
             data-repo="${r.name}"
           >
             <span class="flex items-center gap-1.5 truncate">
-              <span class="w-1.5 h-1.5 rounded-full ${r.status === 'RUNNING' ? 'bg-emerald-400 pulse-green' : 'bg-blue-400'}"></span>
+              ${this.getStatusBadgeContent(r.status)}
               <span class="font-medium truncate max-w-[140px]">${r.name}</span>
             </span>
             <span class="flex items-center gap-1">
               ${isOpen ? '<span class="text-[9px] text-cyan-400 bg-cyan-950 px-1 rounded border border-cyan-800">open</span>' : ''}
               <span class="text-[10px] text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/40">
-                ${r.port ? ':' + r.port : r.status}
+                ${r.port ? ':' + r.port : ''}
               </span>
             </span>
           </button>
@@ -778,7 +818,7 @@ class App {
           <span class="truncate max-w-[150px]">${r.name}</span>
           <span class="flex items-center gap-1">
             ${isOpen ? '<span class="text-[9px] text-cyan-400 bg-cyan-950 px-1 rounded border border-cyan-800">open</span>' : ''}
-            <span class="text-[10px] text-slate-600">${r.status}</span>
+            ${this.getStatusBadgeContent(r.status)}
           </span>
         </button>
       `;
@@ -813,22 +853,6 @@ class App {
       const status = repo ? repo.status : 'STOPPED';
       const isActive = this.activeTerminalRepo === name;
 
-      let dotClass = 'bg-slate-500';
-      let badgeClass = 'bg-slate-800 text-slate-400 border border-slate-700';
-      if (status === 'RUNNING') {
-        dotClass = 'bg-emerald-400 pulse-green';
-        badgeClass = 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/40';
-      } else if (status === 'STARTING') {
-        dotClass = 'bg-blue-400';
-        badgeClass = 'bg-blue-950/60 text-blue-400 border border-blue-800/40';
-      } else if (status === 'BUILDING') {
-        dotClass = 'bg-amber-400';
-        badgeClass = 'bg-amber-950/60 text-amber-400 border border-amber-800/40';
-      } else if (status === 'ERROR') {
-        dotClass = 'bg-rose-400';
-        badgeClass = 'bg-rose-950/60 text-rose-400 border border-rose-800/40';
-      }
-
       const isDebugActive = repo && repo.debugActive;
       const debugPort = (repo && repo.debugPort) || 5005;
 
@@ -841,9 +865,8 @@ class App {
           }" 
           data-tab-repo="${name}"
         >
-          <span class="w-1.5 h-1.5 rounded-full ${dotClass}"></span>
+          ${this.getStatusBadgeContent(status)}
           <span class="font-medium max-w-[130px] truncate" title="${name}">${name}</span>
-          <span class="text-[9px] px-1.5 py-0.5 rounded font-mono ${badgeClass}">${status}</span>
           ${isDebugActive ? `<span class="text-[9px] px-1.5 py-0.5 rounded font-mono bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-600/50 flex items-center gap-1"><i class="fa-solid fa-bug text-[8px]"></i>:${debugPort}</span>` : ''}
           <button 
             type="button"
@@ -893,7 +916,7 @@ class App {
     this.terminalScreen.innerHTML = '';
 
     if (!this.activeTerminalRepo) {
-      this.terminalScreen.innerHTML = '<div class="text-slate-500 italic">[DevDeck] Click "+ Add App" or "Logs" on any application card to stream stdout/stderr...</div>';
+      this.terminalScreen.innerHTML = '<div class="text-slate-500 italic">[DevDeck] Click "+ Add App" or the terminal icon on any application card to stream stdout/stderr...</div>';
       return;
     }
 
@@ -939,113 +962,44 @@ class App {
     const repo = this.repos.get(name);
     if (!repo) return;
 
-    // 1. Update status badge in-place (keeps fixed dimensions, no jumping)
     const badge = card.querySelector('.status-badge');
-    if (badge) {
-      badge.className = `status-badge ${this.getStatusBadgeClass(status)}`;
-      badge.innerHTML = this.getStatusBadgeContent(status);
+    if (badge) badge.innerHTML = this.getStatusBadgeContent(status);
+
+    const debugBadge = card.querySelector('.header-debug-badge');
+    if (debugBadge) {
+      debugBadge.classList.toggle('hidden', !repo.debugActive);
+      debugBadge.title = `Remote debugger on port ${repo.debugPort || 5005}`;
+      debugBadge.innerHTML = `<i class="fa-solid fa-bug" aria-hidden="true"></i> :${repo.debugPort || 5005}`;
     }
 
-    // 2. Update debug indicator in header
-    const debugBadgeEl = card.querySelector('.header-debug-badge');
-    const isDebugActive = !!repo.debugActive;
-    const debugPort = repo.debugPort || 5005;
-    if (debugBadgeEl) {
-      if (isDebugActive) {
-        debugBadgeEl.className = 'header-debug-badge text-[10px] font-mono font-bold text-fuchsia-300 bg-fuchsia-950/80 px-2 py-0.5 rounded-full border border-fuchsia-500/60 shadow-sm shadow-fuchsia-900/40 flex items-center gap-1 pulse-purple';
-        debugBadgeEl.innerHTML = `<i class="fa-solid fa-bug text-[10px] text-fuchsia-400"></i> :${debugPort}`;
-      } else {
-        debugBadgeEl.className = 'header-debug-badge hidden';
-      }
-    }
-
-    // 3. Update buttons in-place
-    const startBtn = card.querySelector('.btn-start');
-    const stopBtn = card.querySelector('.btn-stop');
-    const restartBtn = card.querySelector('.btn-restart');
-    const buildBtn = card.querySelector('.btn-build');
-    const pullBtn = card.querySelector('.btn-pull');
-    const debugBtn = card.querySelector('.btn-debug');
-
-    if (status === 'RUNNING') {
-      if (startBtn) startBtn.classList.add('hidden');
-      if (stopBtn) stopBtn.classList.remove('hidden');
-      if (restartBtn) restartBtn.classList.remove('hidden');
-      if (buildBtn) buildBtn.disabled = true;
-      if (pullBtn) pullBtn.disabled = true;
-      if (debugBtn) {
-        debugBtn.disabled = false;
-        debugBtn.classList.remove('hidden');
-        if (isDebugActive) {
-          debugBtn.className = 'btn-debug btn-fluid px-2 py-1.5 rounded-lg bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-500/60 shadow-sm shadow-fuchsia-900/30 font-medium text-xs';
-        } else {
-          debugBtn.className = 'btn-debug btn-fluid px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-fuchsia-950/60 text-fuchsia-400 hover:text-fuchsia-200 border border-slate-700/80 hover:border-fuchsia-500/40 font-medium text-xs';
-        }
-      }
-    } else if (status === 'STARTING') {
-      if (startBtn) startBtn.classList.add('hidden');
-      if (stopBtn) stopBtn.classList.remove('hidden');
-      if (restartBtn) restartBtn.classList.add('hidden');
-      if (buildBtn) buildBtn.disabled = true;
-      if (pullBtn) pullBtn.disabled = true;
-      if (debugBtn) debugBtn.disabled = true;
-    } else if (status === 'BUILDING' || status === 'PULLING') {
-      if (startBtn) startBtn.disabled = true;
-      if (stopBtn) stopBtn.classList.remove('hidden');
-      if (restartBtn) restartBtn.classList.add('hidden');
-      if (buildBtn) buildBtn.disabled = true;
-      if (pullBtn) pullBtn.disabled = true;
-      if (debugBtn) debugBtn.classList.add('hidden');
-    } else {
-      // STOPPED or ERROR
-      if (startBtn) {
-        startBtn.classList.remove('hidden');
-        startBtn.disabled = false;
-      }
-      if (stopBtn) stopBtn.classList.add('hidden');
-      if (restartBtn) restartBtn.classList.add('hidden');
-      if (buildBtn) buildBtn.disabled = false;
-      if (pullBtn) pullBtn.disabled = false;
-      if (debugBtn) {
-        debugBtn.disabled = false;
-        debugBtn.classList.remove('hidden');
-        debugBtn.className = 'btn-debug btn-fluid px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-fuchsia-950/60 text-fuchsia-400 hover:text-fuchsia-200 border border-slate-700/80 hover:border-fuchsia-500/40 font-medium text-xs';
-      }
-    }
-  }
-
-  getStatusBadgeClass(status) {
-    switch (status) {
-      case 'RUNNING':
-        return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
-      case 'STARTING':
-        return 'bg-blue-500/10 text-blue-400 border-blue-500/30';
-      case 'BUILDING':
-        return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
-      case 'PULLING':
-        return 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30';
-      case 'ERROR':
-        return 'bg-rose-500/10 text-rose-400 border-rose-500/30';
-      default:
-        return 'bg-slate-800 text-slate-400 border-slate-700';
-    }
+    const running = status === 'RUNNING';
+    const starting = status === 'STARTING';
+    const busy = status === 'BUILDING' || status === 'PULLING';
+    const setButton = (selector, hidden, disabled = false) => {
+      const button = card.querySelector(selector);
+      button.classList.toggle('hidden', hidden);
+      button.disabled = disabled;
+    };
+    setButton('.btn-start', running || starting, busy);
+    setButton('.btn-stop', !(running || starting || busy));
+    setButton('.btn-restart', !running);
+    setButton('.btn-build', false, running || starting || busy);
+    setButton('.btn-pull', false, running || starting || busy);
+    setButton('.btn-debug', busy, starting);
+    card.querySelector('.btn-debug').classList.toggle('debug-active', !!repo.debugActive);
   }
 
   getStatusBadgeContent(status) {
-    switch (status) {
-      case 'RUNNING':
-        return `<span class="status-dot status-dot-running"></span>RUNNING`;
-      case 'STARTING':
-        return `<span class="status-dot status-dot-starting"></span>STARTING`;
-      case 'BUILDING':
-        return `<span class="status-dot status-dot-building"></span>BUILDING`;
-      case 'PULLING':
-        return `<span class="status-dot status-dot-pulling"></span>PULLING`;
-      case 'ERROR':
-        return `<span class="status-dot status-dot-error"></span>ERROR`;
-      default:
-        return `<span class="status-dot status-dot-stopped"></span>STOPPED`;
-    }
+    const states = {
+      RUNNING: ['running', 'Running'],
+      STOPPED: ['stopped', 'Stopped'],
+      STARTING: ['starting', 'Starting'],
+      BUILDING: ['building', 'Building'],
+      PULLING: ['pulling', 'Pulling'],
+      ERROR: ['error', 'Error']
+    };
+    const [state, label] = states[status] || states.STOPPED;
+    return `<span class="status-dot status-dot-${state}" role="img" aria-label="${label}" title="${label}"></span>`;
   }
 
   updateCounts() {
@@ -1089,21 +1043,23 @@ class App {
 
     this.emptyState.classList.add('hidden');
 
-    this.repoGrid.innerHTML = filtered.map((repo) => this.renderCardHtml(repo)).join('');
+    // Only animate newly visible cards, not routine live data updates.
+    const visible = new Set(Array.from(this.repoGrid.children, (card) => card.dataset.cardRepo));
+    this.repoGrid.innerHTML = filtered.map((repo, index) =>
+      this.renderCardHtml(repo, !visible.has(repo.name), index)
+    ).join('');
 
     // Attach event listeners to card buttons
     filtered.forEach((repo) => {
       const card = document.querySelector(`[data-card-repo="${repo.name}"]`);
       if (card) {
         this.attachCardListeners(card, repo.name);
+        this.updateCardStatus(repo.name, repo.status);
       }
     });
   }
 
-  renderCardHtml(repo) {
-    const isRunning = repo.status === 'RUNNING';
-    const isBuilding = repo.status === 'BUILDING';
-    const isPulling = repo.status === 'PULLING';
+  renderCardHtml(repo, animate = false, index = 0) {
     const isDebugActive = !!repo.debugActive;
     const debugPort = repo.debugPort || 5005;
 
@@ -1130,13 +1086,13 @@ class App {
     }
 
     return `
-      <div class="glass-card rounded-2xl p-4 flex flex-col justify-between" data-card-repo="${repo.name}">
+      <div class="glass-card flex flex-col justify-between ${animate ? 'card-enter' : ''}" style="--entry-delay: ${Math.min(index, 7) * 35}ms" data-card-repo="${repo.name}">
         
         <!-- Header -->
         <div>
-          <div class="flex items-start justify-between gap-2 mb-2.5">
+          <div class="card-heading">
             <div>
-              <h4 class="font-bold text-sm tracking-tight text-white flex items-center gap-1.5 truncate max-w-[210px]" title="${repo.name}">
+              <h4 class="card-title truncate" title="${repo.name}">
                 ${repo.name}
               </h4>
               <div class="flex items-center gap-1.5 mt-1 flex-wrap">
@@ -1144,20 +1100,20 @@ class App {
                   ${catLabel}
                 </span>
                 ${repo.port ? `<span class="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-800/40">:${repo.port}</span>` : ''}
-                <span class="header-debug-badge ${isDebugActive ? 'text-[10px] font-mono font-bold text-fuchsia-300 bg-fuchsia-950/80 px-2 py-0.5 rounded-full border border-fuchsia-500/60 shadow-sm shadow-fuchsia-900/40 flex items-center gap-1 pulse-purple' : 'hidden'}" title="Remote Debugger (Port: ${debugPort})">
+                <span class="header-debug-badge text-[10px] font-mono text-fuchsia-300 flex items-center gap-1 ${isDebugActive ? '' : 'hidden'}" title="Remote Debugger (Port: ${debugPort})">
                   <i class="fa-solid fa-bug text-[10px] text-fuchsia-400"></i> :${debugPort}
                 </span>
               </div>
             </div>
 
             <!-- Status Badge -->
-            <span class="status-badge ${this.getStatusBadgeClass(repo.status)}">
+            <span class="status-badge">
               ${this.getStatusBadgeContent(repo.status)}
             </span>
           </div>
 
           <!-- Metadata Rows -->
-          <div class="space-y-1.5 my-3 text-[11px] text-slate-400">
+          <div class="card-metadata text-[11px] text-slate-400">
             <!-- Git Row -->
             <div class="flex items-center justify-between">
               <span class="flex items-center gap-1 text-slate-400 truncate max-w-[170px]" title="Branch: ${branch}">
@@ -1183,19 +1139,6 @@ class App {
               </span>
             </div>
 
-            <!-- JDWP Debug Row (if active) -->
-            ${isDebugActive ? `
-              <div class="flex items-center justify-between text-[11px] text-fuchsia-300">
-                <span class="flex items-center gap-1">
-                  <i class="fa-solid fa-bug text-[10px] text-fuchsia-400"></i>
-                  <span>JDWP Debug:</span>
-                </span>
-                <span class="font-mono text-[10px] text-fuchsia-300 font-bold">
-                  :${debugPort} <span class="text-[9px] bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-700/60 px-1 rounded ml-0.5">ACTIVE</span>
-                </span>
-              </div>
-            ` : ''}
-
             <!-- Anti-lag tuning pill -->
             <div class="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
               <span>Anti-Lag: <span class="text-indigo-400">384M / C1 JIT</span></span>
@@ -1204,36 +1147,18 @@ class App {
           </div>
         </div>
 
-        <!-- Action Button Row -->
-        <div class="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-1.5">
-          <div class="flex items-center gap-1 flex-wrap">
-            <button class="btn-start btn-fluid px-2.5 py-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white font-medium text-xs shadow-sm shadow-emerald-600/20 ${isRunning ? 'hidden' : ''}" title="Start Application">
-              <i class="fa-solid fa-play text-[10px] mr-1"></i> Start
-            </button>
-            <button class="btn-debug btn-fluid px-2 py-1.5 rounded-lg ${isDebugActive ? 'bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-500/60 shadow-sm shadow-fuchsia-900/30' : 'bg-slate-800 hover:bg-fuchsia-950/60 text-fuchsia-400 hover:text-fuchsia-200 border border-slate-700/80 hover:border-fuchsia-500/40'} font-medium text-xs ${isBuilding || isPulling ? 'hidden' : ''}" title="Launch with Remote Debugger (JDWP port: ${debugPort})">
-              <i class="fa-solid fa-bug text-[10px] mr-1 text-fuchsia-400"></i> Debug
-            </button>
-            <button class="btn-stop btn-fluid px-2.5 py-1.5 rounded-lg bg-rose-600/90 hover:bg-rose-500 text-white font-medium text-xs shadow-sm shadow-rose-600/20 ${isRunning || isBuilding ? '' : 'hidden'}" title="Stop Process">
-              <i class="fa-solid fa-stop text-[10px] mr-1"></i> Stop
-            </button>
-            <button class="btn-restart btn-fluid p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs ${isRunning ? '' : 'hidden'}" title="Restart Process">
-              <i class="fa-solid fa-rotate-right text-[11px]"></i>
-            </button>
-            <button class="btn-build btn-fluid px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs border border-slate-700/80" title="Build Application via ${repo.projectType}">
-              <i class="fa-solid fa-hammer text-[10px] mr-1 text-amber-400"></i> Build
-            </button>
-            <button class="btn-pull btn-fluid p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs" title="Git Pull Latest">
-              <i class="fa-solid fa-cloud-arrow-down text-[11px] text-fuchsia-400"></i>
-            </button>
+        <div class="card-actions">
+          <div>
+            <button class="btn-start icon-button" title="Start application" aria-label="Start application"><i class="fa-solid fa-play" aria-hidden="true"></i></button>
+            <button class="btn-stop icon-button" title="Stop process" aria-label="Stop process"><i class="fa-solid fa-stop" aria-hidden="true"></i></button>
+            <button class="btn-restart icon-button" title="Restart process" aria-label="Restart process"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i></button>
+            <button class="btn-debug icon-button" title="Launch with remote debugger" aria-label="Launch with remote debugger"><i class="fa-solid fa-bug" aria-hidden="true"></i></button>
+            <button class="btn-build icon-button" title="Build application" aria-label="Build application"><i class="fa-solid fa-hammer" aria-hidden="true"></i></button>
+            <button class="btn-pull icon-button" title="Git pull latest" aria-label="Git pull latest"><i class="fa-solid fa-cloud-arrow-down" aria-hidden="true"></i></button>
           </div>
-
-          <div class="flex items-center gap-1">
-            <button class="btn-logs btn-fluid px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-cyan-500/20 hover:text-cyan-300 text-slate-300 text-xs border border-slate-700/70" title="Stream stdout/stderr logs">
-              <i class="fa-solid fa-terminal text-[10px] mr-1 text-cyan-400"></i> Logs
-            </button>
-            <button class="btn-config btn-fluid p-1.5 rounded-lg text-slate-400 hover:text-white text-xs hover:bg-slate-800" title="Configure Java / Port">
-              <i class="fa-solid fa-gear text-[11px]"></i>
-            </button>
+          <div>
+            <button class="btn-logs icon-button" title="View logs" aria-label="View logs"><i class="fa-solid fa-terminal" aria-hidden="true"></i></button>
+            <button class="btn-config icon-button" title="Configure application" aria-label="Configure application"><i class="fa-solid fa-sliders" aria-hidden="true"></i></button>
           </div>
         </div>
 

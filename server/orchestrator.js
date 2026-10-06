@@ -4,6 +4,9 @@ import { discovery } from './discovery.js';
 class Orchestrator {
   constructor() {
     this.activeStack = null; // 'v1' | 'v3' | null
+    this.stackName = null;
+    this.customRun = null;
+    this.message = '';
     this.currentStep = 0;
     this.totalSteps = 0;
     this.status = 'IDLE'; // 'IDLE' | 'STARTING' | 'RUNNING' | 'ERROR'
@@ -16,11 +19,14 @@ class Orchestrator {
   }
 
   emitProgress(data) {
+    if (data.message) this.message = data.message;
     const payload = {
       activeStack: this.activeStack,
+      stackName: this.stackName,
       status: this.status,
       currentStep: this.currentStep,
       totalSteps: this.totalSteps,
+      message: this.message,
       ...data
     };
     for (const listener of this.listeners) {
@@ -35,9 +41,11 @@ class Orchestrator {
   getStatus() {
     return {
       activeStack: this.activeStack,
+      stackName: this.stackName,
       status: this.status,
       currentStep: this.currentStep,
-      totalSteps: this.totalSteps
+      totalSteps: this.totalSteps,
+      message: this.message
     };
   }
 
@@ -47,6 +55,7 @@ class Orchestrator {
     }
 
     this.activeStack = 'v1';
+    this.stackName = 'V1 Full Stack';
     this.status = 'STARTING';
 
     const steps = [
@@ -159,6 +168,7 @@ class Orchestrator {
     }
 
     this.activeStack = 'v3';
+    this.stackName = 'V3 NDC Stack';
     this.status = 'STARTING';
 
     const steps = [
@@ -224,8 +234,54 @@ class Orchestrator {
     }
   }
 
+  async startCustomStack(stack) {
+    if (this.status === 'STARTING' || this.customRun) throw new Error('A stack startup sequence is already in progress.');
+    const missing = stack.services.filter((name) => !discovery.get(name));
+    if (missing.length) throw new Error(`Repositories no longer available: ${missing.join(', ')}`);
+    const run = { cancelled: false };
+    this.customRun = run;
+    this.activeStack = stack.id;
+    this.stackName = stack.name;
+    this.status = 'STARTING';
+    this.currentStep = 0;
+    this.totalSteps = stack.services.length;
+    this.emitProgress({ message: `Starting ${stack.name}...` });
+    try {
+      for (const name of stack.services) {
+        if (run.cancelled) return;
+        this.currentStep++;
+        this.emitProgress({ currentApp: name, message: `Starting ${name}...` });
+        const result = await supervisor.start(name);
+        if (run.cancelled) {
+          await supervisor.stop(name);
+          return;
+        }
+        if (result?.success === false) throw new Error(result.message || `Failed to start ${name}`);
+        const repo = discovery.get(name);
+        if (repo.port) {
+          const ready = await supervisor.waitForPort(repo.port, 90000, 1000);
+          if (run.cancelled) return;
+          if (!ready) throw new Error(`${name} did not become ready on port ${repo.port}.`);
+        }
+      }
+      this.status = 'RUNNING';
+      this.emitProgress({ message: `${stack.name} successfully started!` });
+      return { success: true };
+    } catch (err) {
+      if (!run.cancelled) {
+        this.status = 'ERROR';
+        this.emitProgress({ message: `${stack.name} failed: ${err.message}` });
+      }
+      throw err;
+    } finally {
+      if (this.customRun === run) this.customRun = null;
+    }
+  }
+
   async stopAll() {
+    if (this.customRun) this.customRun.cancelled = true;
     this.activeStack = null;
+    this.stackName = null;
     this.status = 'IDLE';
     this.currentStep = 0;
     this.emitProgress({ message: 'Stopping all services...' });

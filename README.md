@@ -28,9 +28,11 @@ VDC DevDeck is a lightweight, local developer portal and headless process orches
 - *(Optional override: set `export VERTEIL_DIR=/custom/path` if your repos are in a different directory).*
 
 ### 2. AWS CodeArtifact Token Management
-- Automates fetching and refreshing the 12-hour AWS CodeArtifact authorization token so Gradle and Maven builds never fail due to expired credentials.
+- Fetches CodeArtifact tokens using your selected profile and region, tracks token/session expiry, and refreshes credentials before builds and service starts when needed.
 - **Configurable AWS Profile**:
-  - Defaults to `sdd`.
+  - Open the gear beside the AWS badge to save your profile and CodeArtifact region. Defaults: `VerteilDeveloper-683455398069`, `ap-south-1`.
+  - Saved dashboard settings take precedence over `AWS_PROFILE` and `AWS_REGION` / `AWS_DEFAULT_REGION`. Settings and custom stacks persist in `~/.vdc-devdeck/settings.json` (override the directory with `DEVDECK_DATA_DIR`).
+  - Uses AWS CLI v2 credential export for SSO. Older CLI setups fall back to `ssocreds -p <profile>`, matching the legacy setup script. Ensure `aws` and, when needed, `ssocreds` are available on the daemon’s `PATH`.
   - If your local AWS SSO profile has a different name, specify it with `export AWS_PROFILE=your-profile` or prefix `./devdeck.sh start`:
     ```bash
     AWS_PROFILE=my-profile ./devdeck.sh start
@@ -40,7 +42,7 @@ VDC DevDeck is a lightweight, local developer portal and headless process orches
     aws sso login --profile <your-profile>
     ```
 
-### 3. The 3 Startup Modes
+### 3. Startup Modes
 - **Mode 1: V1 Full Stack (`[⚡ Start V1 Stack]`)**:
   Sequenced, health-gated startup for:
   `verteil-ui` ➔ `tomcat-vdc` ➔ `vdc-configurator` ➔ `auth-service` ➔ `agencymanagement-v1` ➔ `entrygate-service` ➔ `ordermanagement-v1` ➔ `offermanagement-v1` ➔ `payment` ➔ `opendata`.
@@ -55,6 +57,8 @@ VDC DevDeck is a lightweight, local developer portal and headless process orches
   - **Start / Stop / Restart**: Runs headless without opening heavy terminal windows.
   - **Logs**: Opens real-time streaming terminal with ANSI color support.
   - **Config / Remote Debug**: Configure JDK version, custom port, or attach JDWP remote debugging.
+
+- **Custom stacks**: Open **Custom stacks** in the top bar, name a stack, add repositories and use the arrows to arrange startup order. Save it, then click **Start**. Saved stacks can be edited or deleted. Put dependencies first; each configured service port must become ready before the next service starts. Missing repositories and startup failures are reported in the progress banner.
 
 ### 4. Anti-Lag Engine (Engineered for Laptop Stability)
 - **JVM Heap Capping**: Injects `-Xms128m -Xmx384m` (or `-Xmx512m` for configurator) so running 10 services uses **under 4GB RAM** instead of the default ~40GB virtual heap that causes severe disk swapping.
@@ -78,7 +82,7 @@ cd vdc-devdeck
 ```bash
 ./devdeck.sh start
 ```
-*(Or specify a custom AWS profile if different from `sdd`)*:
+*(Or supply a default profile before saving settings in the dashboard)*:
 ```bash
 AWS_PROFILE=my-verteil-profile ./devdeck.sh start
 ```
@@ -104,17 +108,20 @@ AWS_PROFILE=my-verteil-profile ./devdeck.sh start
 ## 🖥 Dashboard Overview
 
 - **Top Bar**:
-  - `[Start V1 Stack]` & `[Start V3 Stack]` one-click launch buttons.
-  - `[Stop All]` button.
+  - Play controls for V1 and V3 launches, plus a custom-stack editor and launcher.
+  - Stop-all and force-kill icons with descriptive tooltips.
+  - Light/dark theme toggle. Defaults to the system theme and remembers your selection.
   - **Auto-detected Workspace Path**: Displays the active directory being monitored.
   - **System Resource Telemetry**: Live CPU %, RAM GB used, and active JVM count.
-  - **AWS CodeArtifact Status**: Shows token validity, configured AWS profile, and one-click token refresh.
+  - **AWS CodeArtifact Status**: Shows token validity, configured AWS profile, one-click token refresh, and a gear to edit profile/region. Setup failures show the actual error instead of a generic “Token Expired” label.
 - **Search & Filter Bar**:
   - Search any repo by name, branch, or type (press `/` to focus).
   - Quick filters: `All`, `Running`, `V1 Stack`, `V3 Stack`, `Connectors`, `Needs Build`.
-  - `[Rescan]` button to immediately reload workspace.
+  - Rescan icon to immediately reload workspace.
 - **Application Cards**:
-  - Pulsating status badge (`RUNNING 🟢`, `BUILDING 🟡`, `PULLING 🟣`, `STOPPED ⚪`, `ERROR 🔴`).
+  - Green dots for running applications and red dots for stopped or failed applications; activity rings for starting, building, and pulling. Hover for the status label.
+  - Icon controls for start, debug, stop, restart, build, pull, logs, and configuration, with tooltips and accessible labels.
+  - Frosted glass panels, responsive spacing, and subtle entry animations that respect reduced-motion preferences.
   - Git branch, uncommitted changes indicator, commits ahead/behind remote.
   - Configured SDKMAN JDK and service port.
 - **Live Terminal Drawer**:
