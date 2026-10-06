@@ -2,20 +2,49 @@
 
 > **Local Stack Orchestrator & Dynamic Application Auto-Discovery for Verteil Direct Connect (VDC)**
 
-VDC DevDeck is a lightweight, local-hosted developer portal and headless process orchestrator. It solves the bottlenecks of manual scripts, eliminates lag and freeze-ups on developer laptops, dynamically discovers newly cloned repositories, and provides a modern, dark fluidic dashboard.
+VDC DevDeck is a lightweight, local developer portal and headless process orchestrator designed for **Linux native environments**. It eliminates manual multi-terminal startup scripts, prevents laptop freezes through smart JVM memory limits, auto-discovers newly cloned repositories, and provides a real-time dark fluidic dashboard.
+
+---
+
+## 💻 System Requirements
+
+> [!IMPORTANT]
+> **Linux Native OS Required**: DevDeck is designed and optimized specifically for **Linux native machines** (Ubuntu, Debian, Fedora, Arch, or WSL2 on Windows). It depends on Linux-native process control utilities (`ss`, `fuser`, `setsid`, `pkill`, `killall`, and `/proc/meminfo`).
+
+### Prerequisites Checklist:
+1. **Node.js**: v18+ installed and available on `$PATH`.
+2. **SDKMAN!**: Installed at `~/.sdkman` with JDK candidates installed (`17.0.9-amzn`, `21.0.1-amzn`, `18.0.2-sem`, etc.).
+3. **AWS CLI & SSO**: Installed and configured for Verteil's private AWS CodeArtifact (`vdc-repository`).
+4. **Linux Utilities**: Standard tools (`fuser` via `psmisc`, `ss` via `iproute2`, `unzip`, `git`).
 
 ---
 
 ## 🌟 Key Capabilities
 
-### 1. Dynamic Auto-Discovery (Zero Hardcoding)
-- Continuously scans and watches `~/Desktop/verteil` (69+ repositories, including airline connectors).
-- Whenever you `git clone` a new application or connector, DevDeck automatically detects it, identifies whether it uses **Maven**, **Gradle**, **Node/Angular**, or **Tomcat**, finds its target executable JARs, detects the appropriate **JDK version**, and exposes it on the dashboard without manual script editing.
+### 1. Dynamic Auto-Discovery (Plug & Play)
+- **Zero Hardcoding**: Simply clone `vdc-devdeck` inside the directory where all your other Verteil repositories are cloned (e.g. `~/Desktop/verteil`, `~/projects/verteil`, `~/workspace`).
+- DevDeck automatically detects its parent workspace directory and continuously scans all sibling repositories (microservices, airline connectors, schemas, UI).
+- When you `git clone` a new service, DevDeck detects it in real-time, identifies whether it uses **Maven**, **Gradle**, **Node/Angular**, or **Tomcat**, locates the target executable JAR, detects the required **JDK version**, and adds it to the dashboard.
+- *(Optional override: set `export VERTEIL_DIR=/custom/path` if your repos are in a different directory).*
 
-### 2. The 3 Startup Modes
+### 2. AWS CodeArtifact Token Management
+- Automates fetching and refreshing the 12-hour AWS CodeArtifact authorization token so Gradle and Maven builds never fail due to expired credentials.
+- **Configurable AWS Profile**:
+  - Defaults to `sdd`.
+  - If your local AWS SSO profile has a different name, specify it with `export AWS_PROFILE=your-profile` or prefix `./devdeck.sh start`:
+    ```bash
+    AWS_PROFILE=my-profile ./devdeck.sh start
+    ```
+  - Ensure you have an active session:
+    ```bash
+    aws sso login --profile <your-profile>
+    ```
+
+### 3. The 3 Startup Modes
 - **Mode 1: V1 Full Stack (`[⚡ Start V1 Stack]`)**:
   Sequenced, health-gated startup for:
   `verteil-ui` ➔ `tomcat-vdc` ➔ `vdc-configurator` ➔ `auth-service` ➔ `agencymanagement-v1` ➔ `entrygate-service` ➔ `ordermanagement-v1` ➔ `offermanagement-v1` ➔ `payment` ➔ `opendata`.
+  *(Automatically skips any services you haven't cloned).*
 - **Mode 2: V3 NDC Stack (`[🚀 Start V3 Stack]`)**:
   Fast startup for next-gen microservices:
   `ordermanagement` (V3) ➔ `offermanagement` (V3).
@@ -25,34 +54,49 @@ VDC DevDeck is a lightweight, local-hosted developer portal and headless process
   - **Build**: Compiles via Gradle (`./gradlew clean build`) or Maven (`./mvnw clean install`) with streaming logs.
   - **Start / Stop / Restart**: Runs headless without opening heavy terminal windows.
   - **Logs**: Opens real-time streaming terminal with ANSI color support.
-  - **Config**: Override JDK version, custom port, or target JAR.
+  - **Config / Remote Debug**: Configure JDK version, custom port, or attach JDWP remote debugging.
 
-### 3. Anti-Lag Engine (Engineered for Laptop Stability)
-- **JVM Heap Capping**: Injects `-Xms128m -Xmx384m` (or `-Xmx512m` for configurator) so running 10 services uses **under 4GB RAM** instead of the default ~40GB virtual heap that previously caused severe disk swapping.
+### 4. Anti-Lag Engine (Engineered for Laptop Stability)
+- **JVM Heap Capping**: Injects `-Xms128m -Xmx384m` (or `-Xmx512m` for configurator) so running 10 services uses **under 4GB RAM** instead of the default ~40GB virtual heap that causes severe disk swapping.
 - **Fast Dev JIT & Tiered Compilation**: Injects `-XX:+TieredCompilation -XX:TieredStopAtLevel=1` (client compiler only) and `-Dspring.main.lazy-initialization=true` to cut JIT CPU burn and boot services in half the time.
-- **Headless Execution**: Completely eliminates GNOME terminal GUI tabs. Captures stdout/stderr into in-memory ring buffers and streams over WebSockets.
-- **AWS Token Pooling**: Authenticates once to AWS CodeArtifact and caches the token for 12 hours, avoiding slow AWS CLI subprocess calls on every run.
+- **Headless Execution**: Eliminates GNOME terminal GUI tabs. Captures stdout/stderr into in-memory ring buffers and streams over WebSockets.
+- **Ghost Process Auto-Cleanup**: Automatically cleans up dead/orphaned processes blocking ports before launching a service.
 
 ---
 
 ## 🚀 Quick Start
 
-### Starting the Daemon
+### 1. Clone into your repos folder
+Clone `vdc-devdeck` directly into the folder where your other Verteil repositories are kept:
 ```bash
-cd ~/Desktop/verteil/vdc-devdeck
-./devdeck.sh start
+cd /path/to/your/verteil-repos
+git clone <repo-url> vdc-devdeck
+cd vdc-devdeck
 ```
 
-Open your browser at:
+### 2. Start the Daemon
+```bash
+./devdeck.sh start
+```
+*(Or specify a custom AWS profile if different from `sdd`)*:
+```bash
+AWS_PROFILE=my-verteil-profile ./devdeck.sh start
+```
+
+### 3. Open the Dashboard
 👉 **[http://localhost:9990](http://localhost:9990)**
 
-### Managing the Daemon
+---
+
+## 🛠 Managing the Daemon
+
 ```bash
-./devdeck.sh status     # Check status and PID
+./devdeck.sh status     # Check status, detected workspace & AWS profile
 ./devdeck.sh stop       # Stop daemon
 ./devdeck.sh restart    # Restart daemon
-./devdeck.sh logs       # View daemon logs
+./devdeck.sh logs       # Stream daemon logs
 ./devdeck.sh fg         # Run in foreground for debugging
+./devdeck.sh kill-java  # Kill switch: terminates all lingering Java processes & frees ports
 ```
 
 ---
@@ -62,11 +106,12 @@ Open your browser at:
 - **Top Bar**:
   - `[Start V1 Stack]` & `[Start V3 Stack]` one-click launch buttons.
   - `[Stop All]` button.
+  - **Auto-detected Workspace Path**: Displays the active directory being monitored.
   - **System Resource Telemetry**: Live CPU %, RAM GB used, and active JVM count.
-  - **AWS CodeArtifact Status**: Shows validity and one-click token refresh.
+  - **AWS CodeArtifact Status**: Shows token validity, configured AWS profile, and one-click token refresh.
 - **Search & Filter Bar**:
   - Search any repo by name, branch, or type (press `/` to focus).
-  - Quick filters: `All (78)`, `Running`, `V1 Stack`, `V3 Stack`, `Connectors`, `Needs Build`.
+  - Quick filters: `All`, `Running`, `V1 Stack`, `V3 Stack`, `Connectors`, `Needs Build`.
   - `[Rescan]` button to immediately reload workspace.
 - **Application Cards**:
   - Pulsating status badge (`RUNNING 🟢`, `BUILDING 🟡`, `PULLING 🟣`, `STOPPED ⚪`, `ERROR 🔴`).

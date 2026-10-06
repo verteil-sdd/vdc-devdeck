@@ -49,7 +49,7 @@ wss.on('connection', async (ws) => {
   const aws = awsManager.getStatus();
   const stack = orchestrator.getStatus();
 
-  ws.send(JSON.stringify({ type: 'init', data: { repos, metrics, aws, stack } }));
+  ws.send(JSON.stringify({ type: 'init', data: { repos, metrics, aws, stack, workspaceDir: config.verteilDir } }));
 
   ws.on('message', (message) => {
     try {
@@ -284,6 +284,21 @@ app.post('/api/aws/refresh', async (req, res) => {
     res.json({ success: true, status });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/aws/profile', async (req, res) => {
+  try {
+    const { profile } = req.body;
+    if (profile && typeof profile === 'string') {
+      config.awsProfile = profile.trim();
+      process.env.AWS_PROFILE = config.awsProfile;
+    }
+    const status = await awsManager.refreshCredentials();
+    broadcast('aws:updated', status);
+    res.json({ success: true, status });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message, status: awsManager.getStatus() });
   }
 });
 

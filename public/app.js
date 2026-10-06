@@ -238,6 +238,10 @@ class App {
         data.repos.forEach((r) => this.repos.set(r.name, r));
         this.updateMetrics(data.metrics);
         this.updateAwsStatus(data.aws);
+        if (data.workspaceDir) {
+          const wsEl = document.getElementById('headerWorkspaceText');
+          if (wsEl) wsEl.textContent = data.workspaceDir;
+        }
         if (data.stack) this.updateStackProgress(data.stack);
         this.render();
         break;
@@ -356,18 +360,21 @@ class App {
 
   updateAwsStatus(aws) {
     if (!aws) return;
+    const profile = aws.profile || 'sdd';
     if (aws.isValid) {
-      this.awsStatusText.textContent = 'CodeArtifact: Valid';
+      this.awsStatusText.textContent = `CodeArtifact: Valid (${profile})`;
       this.awsStatusText.className = 'text-emerald-400 text-xs';
       this.awsRefreshIcon.classList.remove('fa-spin');
+      if (this.awsBadge) this.awsBadge.title = `AWS Profile: ${profile} (Valid). Click to refresh token.`;
     } else if (aws.isRefreshing) {
-      this.awsStatusText.textContent = 'Refreshing token...';
+      this.awsStatusText.textContent = `Refreshing token (${profile})...`;
       this.awsStatusText.className = 'text-amber-400 text-xs';
       this.awsRefreshIcon.classList.add('fa-spin');
     } else {
-      this.awsStatusText.textContent = 'Token Expired (Click to fix)';
+      this.awsStatusText.textContent = `Token Expired (${profile})`;
       this.awsStatusText.className = 'text-rose-400 text-xs';
       this.awsRefreshIcon.classList.remove('fa-spin');
+      if (this.awsBadge) this.awsBadge.title = aws.lastError || `Click to refresh token for profile '${profile}'`;
     }
   }
 

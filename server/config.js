@@ -1,12 +1,19 @@
 import path from 'path';
 import os from 'os';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const HOME = os.homedir();
+// Auto-detect parent directory (sibling repositories workspace)
+const defaultWorkspaceDir = path.resolve(__dirname, '../../');
 
 export const config = {
   port: parseInt(process.env.PORT || '9990', 10),
   host: process.env.HOST || '0.0.0.0',
-  verteilDir: process.env.VERTEIL_DIR || path.join(HOME, 'Desktop/verteil'),
+  verteilDir: process.env.VERTEIL_DIR || defaultWorkspaceDir,
+  awsProfile: process.env.AWS_PROFILE || 'sdd',
   awsConfigScript: path.join(HOME, 'awsconfig/configure.sh'),
   sdkmanJavaDir: path.join(HOME, '.sdkman/candidates/java'),
   dataDir: path.join(HOME, '.vdc-devdeck'),

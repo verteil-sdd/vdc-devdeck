@@ -78,7 +78,7 @@ class Orchestrator {
           console.warn(`[Orchestrator] Repository ${step.name} not found in workspace, skipping.`);
           this.emitProgress({
             currentApp: step.name,
-            message: `Repository ${step.name} not found in ~/Desktop/verteil, skipping...`
+            message: `Repository ${step.name} not found in workspace, skipping...`
           });
           continue;
         }

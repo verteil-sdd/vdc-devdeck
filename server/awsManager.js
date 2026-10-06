@@ -38,13 +38,15 @@ class AWSManager {
   }
 
   getStatus() {
+    const profile = config.awsProfile || process.env.AWS_PROFILE || 'sdd';
     return {
       isValid: !!this.cache.CODEARTIFACT_AUTH_TOKEN && this.isTokenFresh(),
       updatedAt: this.cache.updatedAt,
       isRefreshing: this.isRefreshing,
       hasCodeArtifactToken: !!this.cache.CODEARTIFACT_AUTH_TOKEN,
       hasAwsKeys: !!(this.cache.AWS_ACCESS_KEY_ID && this.cache.AWS_SECRET_ACCESS_KEY),
-      lastError: this.cache.lastError
+      lastError: this.cache.lastError,
+      profile
     };
   }
 
@@ -57,17 +59,18 @@ class AWSManager {
 
     try {
       let parsed = {};
+      const profile = config.awsProfile || process.env.AWS_PROFILE || 'sdd';
 
-      // 1. Fast path: Direct AWS CLI token retrieval using profile sdd (~2-3s)
+      // 1. Fast path: Direct AWS CLI token retrieval using configured profile (~2-3s)
       try {
         const fastTokenCmd =
-          'aws codeartifact get-authorization-token --profile sdd --domain vdc-repository --domain-owner 683455398069 --query authorizationToken --output text';
+          `aws codeartifact get-authorization-token --profile ${profile} --domain vdc-repository --domain-owner 683455398069 --query authorizationToken --output text`;
         const { stdout: tokenOut } = await execAsync(fastTokenCmd, { timeout: 12000 });
         const token = tokenOut.trim();
         if (token && token.length > 20 && !token.includes('Error')) {
-          const { stdout: akId } = await execAsync('aws configure get --profile sdd aws_access_key_id', { timeout: 5000 });
-          const { stdout: secKey } = await execAsync('aws configure get --profile sdd aws_secret_access_key', { timeout: 5000 });
-          const { stdout: sessTok } = await execAsync('aws configure get --profile sdd aws_session_token', { timeout: 5000 });
+          const { stdout: akId } = await execAsync(`aws configure get --profile ${profile} aws_access_key_id`, { timeout: 5000 }).catch(() => ({ stdout: '' }));
+          const { stdout: secKey } = await execAsync(`aws configure get --profile ${profile} aws_secret_access_key`, { timeout: 5000 }).catch(() => ({ stdout: '' }));
+          const { stdout: sessTok } = await execAsync(`aws configure get --profile ${profile} aws_session_token`, { timeout: 5000 }).catch(() => ({ stdout: '' }));
           parsed = {
             AWS_ACCESS_KEY_ID: akId.trim(),
             AWS_SECRET_ACCESS_KEY: secKey.trim(),
@@ -79,30 +82,51 @@ class AWSManager {
         // Fast path failed or credentials need full ssocreds refresh
       }
 
-      // 2. Full refresh via configure.sh (handles ssocreds)
-      if (!parsed.CODEARTIFACT_AUTH_TOKEN) {
-        if (!fs.existsSync(config.awsConfigScript)) {
-          throw new Error(`AWS configure script not found at ${config.awsConfigScript}`);
-        }
-
-        const cmd = `bash -c '. "${config.awsConfigScript}" >/dev/null 2>&1; echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"; echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"; echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN"; echo "CODEARTIFACT_AUTH_TOKEN=$CODEARTIFACT_AUTH_TOKEN"'`;
-        const { stdout } = await execAsync(cmd, { timeout: 90000 });
-        const lines = stdout.split('\n');
-        for (const line of lines) {
-          const idx = line.indexOf('=');
-          if (idx > -1) {
-            const key = line.slice(0, idx).trim();
-            let val = line.slice(idx + 1).trim();
-            if (val.startsWith('"') && val.endsWith('"')) {
-              val = val.slice(1, -1);
+      // 2. Full refresh via configure.sh (handles legacy ssocreds if script exists)
+      if (!parsed.CODEARTIFACT_AUTH_TOKEN && fs.existsSync(config.awsConfigScript)) {
+        try {
+          const cmd = `bash -c '. "${config.awsConfigScript}" >/dev/null 2>&1; echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"; echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"; echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN"; echo "CODEARTIFACT_AUTH_TOKEN=$CODEARTIFACT_AUTH_TOKEN"'`;
+          const { stdout } = await execAsync(cmd, { timeout: 90000 });
+          const lines = stdout.split('\n');
+          for (const line of lines) {
+            const idx = line.indexOf('=');
+            if (idx > -1) {
+              const key = line.slice(0, idx).trim();
+              let val = line.slice(idx + 1).trim();
+              if (val.startsWith('"') && val.endsWith('"')) {
+                val = val.slice(1, -1);
+              }
+              parsed[key] = val;
             }
-            parsed[key] = val;
           }
+        } catch (scriptErr) {
+          console.warn('[AWSManager] awsConfigScript execution failed:', scriptErr.message);
         }
       }
 
+      // 3. Fallback: Direct AWS CLI token retrieval without explicit profile
+      if (!parsed.CODEARTIFACT_AUTH_TOKEN && profile !== 'default') {
+        try {
+          const defaultTokenCmd =
+            'aws codeartifact get-authorization-token --domain vdc-repository --domain-owner 683455398069 --query authorizationToken --output text';
+          const { stdout: tokenOut } = await execAsync(defaultTokenCmd, { timeout: 12000 });
+          const token = tokenOut.trim();
+          if (token && token.length > 20 && !token.includes('Error')) {
+            const { stdout: akId } = await execAsync('aws configure get aws_access_key_id', { timeout: 5000 }).catch(() => ({ stdout: '' }));
+            const { stdout: secKey } = await execAsync('aws configure get aws_secret_access_key', { timeout: 5000 }).catch(() => ({ stdout: '' }));
+            const { stdout: sessTok } = await execAsync('aws configure get aws_session_token', { timeout: 5000 }).catch(() => ({ stdout: '' }));
+            parsed = {
+              AWS_ACCESS_KEY_ID: akId.trim(),
+              AWS_SECRET_ACCESS_KEY: secKey.trim(),
+              AWS_SESSION_TOKEN: sessTok.trim(),
+              CODEARTIFACT_AUTH_TOKEN: token
+            };
+          }
+        } catch {}
+      }
+
       if (!parsed.CODEARTIFACT_AUTH_TOKEN) {
-        throw new Error('Failed to retrieve CODEARTIFACT_AUTH_TOKEN from AWS');
+        throw new Error(`Failed to retrieve CODEARTIFACT_AUTH_TOKEN using AWS profile '${profile}'. Please run: aws sso login --profile ${profile}`);
       }
 
       this.cache = {

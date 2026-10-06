@@ -2,6 +2,14 @@
 # VDC DevDeck Control Script
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PARENT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Auto-detect parent workspace directory containing all sibling repos if VERTEIL_DIR is not set
+export VERTEIL_DIR="${VERTEIL_DIR:-$PARENT_DIR}"
+
+# Default AWS profile to 'sdd' if not set
+export AWS_PROFILE="${AWS_PROFILE:-sdd}"
+
 PID_FILE="$HOME/.vdc-devdeck/devdeck.pid"
 LOG_FILE="$HOME/.vdc-devdeck/devdeck.log"
 
@@ -29,6 +37,8 @@ case "$1" in
       exit 0
     fi
     echo "Starting VDC DevDeck daemon on http://localhost:9990..."
+    echo "📁 Workspace:   $VERTEIL_DIR"
+    echo "☁️  AWS Profile: $AWS_PROFILE"
     cd "$SCRIPT_DIR"
     setsid node server/index.js >> "$LOG_FILE" 2>&1 &
     PID=$!
@@ -81,9 +91,13 @@ case "$1" in
   status)
     if is_running; then
       echo "✅ VDC DevDeck is RUNNING."
-      echo "👉 URL: http://localhost:9990"
+      echo "👉 URL:         http://localhost:9990"
+      echo "📁 Workspace:   $VERTEIL_DIR"
+      echo "☁️  AWS Profile: $AWS_PROFILE"
     else
       echo "⚪ VDC DevDeck is STOPPED."
+      echo "📁 Workspace:   $VERTEIL_DIR"
+      echo "☁️  AWS Profile: $AWS_PROFILE"
     fi
     ;;
 
@@ -93,6 +107,8 @@ case "$1" in
 
   fg)
     echo "Running VDC DevDeck in foreground..."
+    echo "📁 Workspace:   $VERTEIL_DIR"
+    echo "☁️  AWS Profile: $AWS_PROFILE"
     cd "$SCRIPT_DIR"
     node server/index.js
     ;;
