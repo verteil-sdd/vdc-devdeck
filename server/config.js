@@ -8,17 +8,18 @@ const __dirname = path.dirname(__filename);
 const HOME = os.homedir();
 // Auto-detect parent directory (sibling repositories workspace)
 const defaultWorkspaceDir = path.resolve(__dirname, '../../');
+const dataDir = process.env.DEVDECK_DATA_DIR || path.join(HOME, '.vdc-devdeck');
 
 export const config = {
   port: parseInt(process.env.PORT || '9990', 10),
   host: process.env.HOST || '0.0.0.0',
   verteilDir: process.env.VERTEIL_DIR || defaultWorkspaceDir,
-  awsProfile: process.env.AWS_PROFILE || 'sdd',
-  awsConfigScript: path.join(HOME, 'awsconfig/configure.sh'),
+  awsProfile: process.env.AWS_PROFILE || 'VerteilDeveloper-683455398069',
+  awsRegion: process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'ap-south-1',
   sdkmanJavaDir: path.join(HOME, '.sdkman/candidates/java'),
-  dataDir: path.join(HOME, '.vdc-devdeck'),
-  logsDir: path.join(HOME, '.vdc-devdeck/logs'),
-  overridesFile: path.join(HOME, '.vdc-devdeck/overrides.json'),
+  dataDir,
+  logsDir: path.join(dataDir, 'logs'),
+  overridesFile: path.join(dataDir, 'overrides.json'),
 
   // Anti-Lag JVM Tuning defaults
   defaultJvmMemory: {

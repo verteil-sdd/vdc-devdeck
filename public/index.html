@@ -6,6 +6,7 @@
   <title>VDC DevDeck | Local Stack Orchestrator</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg">
   <link rel="alternate icon" href="/favicon.svg">
+  <script src="/theme.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -34,91 +35,55 @@
 </head>
 <body class="bg-midnight text-slate-100 min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white">
 
-  <!-- TOP APP BAR -->
-  <header class="sticky top-0 z-40 glass-panel border-b border-slate-800/80 px-6 py-3.5">
-    <div class="max-w-[1700px] mx-auto flex flex-wrap items-center justify-between gap-4">
-      
-      <!-- Brand & Status -->
-      <div class="flex items-center gap-3.5">
-        <img src="/logo.svg" alt="VDC DevDeck Logo" class="w-10 h-10 rounded-xl shadow-lg shadow-indigo-500/35 ring-1 ring-cyan-400/40 flex-shrink-0 hover:scale-105 transition-transform" />
-
+  <header class="app-header glass-panel">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="VDC DevDeck home">
+        <img src="/logo.svg" alt="" width="38" height="38" />
         <div>
-          <div class="flex items-center gap-2">
-            <span class="font-black text-xl tracking-tight flex items-center gap-1.5 leading-none">
-              <span class="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">VDC</span>
-              <span class="text-cyan-400 drop-shadow-[0_0_12px_rgba(6,182,212,0.45)]">DevDeck</span>
-            </span>
-            <span class="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full bg-indigo-950/90 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-950/60">
-              Anti-Lag Engine
-            </span>
-          </div>
-          <p class="text-xs text-slate-300 font-mono mt-0.5 flex items-center gap-1.5" id="headerWorkspacePath">
-            <i class="fa-solid fa-folder-tree text-cyan-400/70 text-[10px]"></i>
+          <div class="brand-name">VDC <span>DevDeck</span></div>
+          <p id="headerWorkspacePath" class="workspace-path">
+            <i class="fa-solid fa-folder-tree" aria-hidden="true"></i>
             <span id="headerWorkspaceText">Auto-discovering...</span>
           </p>
         </div>
-      </div>
-
-      <!-- 3-MODE STACK LAUNCH CONTROLLERS -->
-      <div class="flex items-center gap-2.5">
-        <!-- MODE 1: V1 STACK -->
-        <button id="btnLaunchV1" class="btn-fluid flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-medium text-xs shadow-md shadow-indigo-600/25 border border-indigo-400/20">
-          <i class="fa-solid fa-layer-group text-sm"></i>
-          <span>Start V1 Stack</span>
-          <span class="text-[10px] bg-black/25 px-1.5 py-0.5 rounded">10 Apps</span>
-        </button>
-
-        <!-- MODE 2: V3 STACK -->
-        <button id="btnLaunchV3" class="btn-fluid flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-500 hover:to-fuchsia-500 text-white font-medium text-xs shadow-md shadow-fuchsia-600/25 border border-fuchsia-400/20">
-          <i class="fa-solid fa-rocket text-sm"></i>
-          <span>Start V3 Stack</span>
-          <span class="text-[10px] bg-black/25 px-1.5 py-0.5 rounded">2 Apps</span>
-        </button>
-
-        <!-- STOP ALL -->
-        <button id="btnStopAll" class="btn-fluid flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 hover:text-rose-400 text-slate-300 font-medium text-xs border border-slate-700 hover:border-rose-500/30">
-          <i class="fa-solid fa-stop text-xs"></i>
-          <span>Stop All</span>
-        </button>
-
-        <!-- KILL SWITCH (FORCE KILL ALL JAVA) -->
-        <button id="btnKillJava" class="btn-fluid flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-950/70 hover:bg-rose-900 text-rose-300 hover:text-white font-medium text-xs border border-rose-600/50 hover:border-rose-500 shadow-sm shadow-rose-950/60 transition-colors" title="Emergency Kill Switch: Force kill all Java processes and free all ports">
-          <i class="fa-solid fa-skull text-xs text-rose-400"></i>
-          <span>Kill Java</span>
+      </a>
+      <div class="header-actions">
+        <div class="stack-controls" aria-label="Stack controls">
+          <button id="btnCustomStacks" class="stack-button" title="Create and launch custom stacks">
+            <i class="fa-solid fa-layer-group" aria-hidden="true"></i><span>Custom stacks</span>
+          </button>
+          <button id="btnLaunchV1" class="stack-button" title="Start V1 stack" aria-label="Start V1 stack">
+            <i class="fa-solid fa-play" aria-hidden="true"></i><span>V1 Stack</span>
+          </button>
+          <button id="btnLaunchV3" class="stack-button" title="Start V3 stack" aria-label="Start V3 stack">
+            <i class="fa-solid fa-play" aria-hidden="true"></i><span>V3 Stack</span>
+          </button>
+          <button id="btnStopAll" class="icon-button danger-action" title="Stop all applications" aria-label="Stop all applications">
+            <i class="fa-solid fa-stop" aria-hidden="true"></i>
+          </button>
+          <button id="btnKillJava" class="icon-button danger-action" title="Force kill all Java processes" aria-label="Force kill all Java processes">
+            <i class="fa-solid fa-power-off" aria-hidden="true"></i>
+          </button>
+        </div>
+        <button id="btnTheme" class="icon-button theme-toggle" title="Toggle light and dark theme" aria-label="Toggle light and dark theme">
+          <i class="fa-solid fa-sun" aria-hidden="true"></i>
         </button>
       </div>
-
-      <!-- SYSTEM RESOURCE TELEMETRY (LAPTOP HEALTH) -->
-      <div class="flex items-center gap-3">
-        <!-- CPU Gauge -->
-        <div class="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-800 text-xs">
-          <i class="fa-solid fa-microchip text-slate-400 text-xs"></i>
-          <span class="text-slate-400">CPU:</span>
-          <span id="metricCpu" class="font-mono font-medium text-emerald-400">--%</span>
-        </div>
-
-        <!-- RAM Gauge -->
-        <div class="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-800 text-xs">
-          <i class="fa-solid fa-memory text-slate-400 text-xs"></i>
-          <span class="text-slate-400">RAM:</span>
-          <span id="metricRam" class="font-mono font-medium text-cyan-400">--/-- GB</span>
-        </div>
-
-        <!-- JVMs Active -->
-        <div class="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-800 text-xs">
-          <i class="fa-brands fa-java text-amber-400 text-xs"></i>
-          <span class="text-slate-400">JVMs:</span>
-          <span id="metricJvms" class="font-mono font-medium text-amber-400">0</span>
-        </div>
-
-        <!-- AWS CodeArtifact Status -->
-        <div id="awsBadge" class="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-800 text-xs cursor-pointer hover:border-slate-700" title="Click to refresh AWS CodeArtifact Token">
-          <i class="fa-brands fa-aws text-orange-400 text-xs"></i>
-          <span id="awsStatusText" class="text-slate-300">AWS: Checking...</span>
-          <i id="awsRefreshIcon" class="fa-solid fa-rotate text-[10px] text-slate-500 hover:text-white"></i>
-        </div>
+    </div>
+    <div class="telemetry-bar">
+      <div class="telemetry-metrics">
+        <div class="metric"><i class="fa-solid fa-microchip" aria-hidden="true"></i><span>CPU</span><span id="metricCpu" class="font-mono text-emerald-400">--%</span></div>
+        <div class="metric"><i class="fa-solid fa-memory" aria-hidden="true"></i><span>RAM</span><span id="metricRam" class="font-mono text-cyan-400">--/-- GB</span></div>
+        <div class="metric"><i class="fa-brands fa-java" aria-hidden="true"></i><span>JVMs</span><span id="metricJvms" class="font-mono text-amber-400">0</span></div>
       </div>
-
+      <div class="aws-controls">
+        <button id="btnAwsSettings" class="icon-button" title="Configure AWS profile and region" aria-label="Configure AWS profile and region"><i class="fa-solid fa-gear" aria-hidden="true"></i></button>
+        <button id="awsBadge" class="aws-status" title="Refresh AWS CodeArtifact token">
+          <i class="fa-brands fa-aws" aria-hidden="true"></i>
+          <span id="awsStatusText">AWS: Checking...</span>
+          <i id="awsRefreshIcon" class="fa-solid fa-rotate" aria-hidden="true"></i>
+        </button>
+      </div>
     </div>
   </header>
 
@@ -131,62 +96,67 @@
         <span id="stackProgressStep" class="text-xs text-indigo-400">Step 1 of 10</span>
         <span id="stackProgressMessage" class="text-xs text-slate-300 border-l border-indigo-800 pl-3">Starting verteil-ui...</span>
       </div>
-      <button id="dismissStackBanner" class="text-slate-400 hover:text-white text-xs">
+      <button id="dismissStackBanner" aria-label="Dismiss stack progress" class="text-slate-400 hover:text-white text-xs">
         <i class="fa-solid fa-xmark"></i>
       </button>
     </div>
   </div>
 
   <!-- MAIN DASHBOARD CONTENT -->
-  <main class="flex-1 max-w-[1700px] w-full mx-auto px-6 py-6 pb-48">
+  <main class="dashboard">
     
+    <div class="dashboard-heading entry-in">
+      <div><p class="eyebrow">YOUR WORKSPACE</p><h1>Applications</h1></div>
+      <p class="dashboard-caption">Your local stack, at a glance.</p>
+    </div>
+
     <!-- TOOLBAR: SEARCH & CATEGORY FILTERS -->
-    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+    <div class="dashboard-toolbar entry-in">
       
       <!-- Filter Chips -->
-      <div class="flex items-center gap-1.5 bg-slate-900/90 p-1.5 rounded-xl border border-slate-800 text-xs" id="categoryFilters">
-        <button class="filter-btn active px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium" data-filter="all">
+      <div class="filter-bar" id="categoryFilters" aria-label="Filter applications">
+        <button class="filter-btn active px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium" data-filter="all" aria-pressed="true">
           All <span id="countAll" class="ml-1 opacity-70">0</span>
         </button>
-        <button class="filter-btn px-3 py-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 font-medium" data-filter="running">
+        <button class="filter-btn px-3 py-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 font-medium" data-filter="running" aria-pressed="false">
           Running <span id="countRunning" class="ml-1 text-emerald-400">0</span>
         </button>
-        <button class="filter-btn px-3 py-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 font-medium" data-filter="v1-core">
+        <button class="filter-btn px-3 py-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 font-medium" data-filter="v1-core" aria-pressed="false">
           V1 Stack <span id="countV1" class="ml-1 opacity-70">10</span>
         </button>
-        <button class="filter-btn px-3 py-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 font-medium" data-filter="v3-core">
+        <button class="filter-btn px-3 py-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 font-medium" data-filter="v3-core" aria-pressed="false">
           V3 Stack <span id="countV3" class="ml-1 opacity-70">2</span>
         </button>
-        <button class="filter-btn px-3 py-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 font-medium" data-filter="connector">
+        <button class="filter-btn px-3 py-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 font-medium" data-filter="connector" aria-pressed="false">
           Connectors <span id="countConnectors" class="ml-1 opacity-70">0</span>
         </button>
-        <button class="filter-btn px-3 py-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 font-medium" data-filter="unbuilt">
+        <button class="filter-btn px-3 py-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 font-medium" data-filter="unbuilt" aria-pressed="false">
           Needs Build <span id="countUnbuilt" class="ml-1 text-amber-400">0</span>
         </button>
       </div>
 
       <!-- Search & Rescan -->
-      <div class="flex items-center gap-3">
-        <div class="relative w-72">
+      <div class="search-controls">
+        <div class="search-field relative">
           <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
           <input 
             type="text" 
             id="searchInput" 
-            placeholder="Search applications (press '/' to focus)..." 
+            placeholder="Search applications..."
+            aria-label="Search applications"
             class="w-full bg-slate-900/90 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
           />
         </div>
 
-        <button id="btnRescan" class="btn-fluid flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-medium border border-slate-700" title="Rescan workspace for repositories">
-          <i class="fa-solid fa-arrows-rotate text-xs"></i>
-          <span>Rescan</span>
+        <button id="btnRescan" class="icon-button" title="Rescan workspace" aria-label="Rescan workspace">
+          <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
         </button>
       </div>
 
     </div>
 
     <!-- REPOSITORIES GRID -->
-    <div id="repoGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    <div id="repoGrid" class="repo-grid">
       <!-- Cards rendered dynamically by app.js -->
     </div>
 
@@ -273,17 +243,17 @@
         </label>
 
         <!-- Clear Logs -->
-        <button id="termClearBtn" class="text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-slate-800" title="Clear console">
+        <button id="termClearBtn" aria-label="Clear console" class="text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-slate-800" title="Clear console">
           <i class="fa-solid fa-trash-can"></i>
         </button>
 
         <!-- Toggle Size -->
-        <button id="termMaximizeBtn" class="text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-slate-800" title="Expand / Minimize">
+        <button id="termMaximizeBtn" aria-label="Expand or minimize terminal" class="text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-slate-800" title="Expand / Minimize">
           <i class="fa-solid fa-up-right-and-down-left-from-center text-[10px]"></i>
         </button>
 
         <!-- Close Terminal -->
-        <button id="termCloseBtn" class="text-slate-400 hover:text-rose-400 text-xs px-2 py-1 rounded hover:bg-slate-800">
+        <button id="termCloseBtn" aria-label="Close terminal" class="text-slate-400 hover:text-rose-400 text-xs px-2 py-1 rounded hover:bg-slate-800">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
@@ -293,20 +263,48 @@
     <!-- Terminal Screen -->
     <div id="terminalScreen" class="flex-1 overflow-y-auto p-4 font-mono text-[12px] leading-relaxed select-text space-y-0.5">
       <!-- Log lines rendered here with ANSI colors -->
-      <div class="text-slate-500 italic">[DevDeck] Click "Logs" on any application card to stream stdout/stderr in real-time...</div>
+      <div class="text-slate-500 italic">[DevDeck] Click the terminal icon on any application card to stream stdout/stderr in real-time...</div>
     </div>
 
   </div>
 
+  <dialog id="awsSettingsDialog" class="settings-dialog" aria-labelledby="awsSettingsTitle">
+    <div class="settings-heading"><h2 id="awsSettingsTitle">AWS settings</h2><button type="button" class="icon-button" data-close-dialog aria-label="Close AWS settings">×</button></div>
+    <form id="awsSettingsForm" class="settings-form">
+      <label for="awsProfileInput">AWS profile</label>
+      <input id="awsProfileInput" required maxlength="128" placeholder="VerteilDeveloper-683455398069" autocomplete="off">
+      <label for="awsRegionInput">CodeArtifact region</label>
+      <input id="awsRegionInput" required placeholder="ap-south-1" autocomplete="off">
+      <p class="settings-hint">Use a profile configured in your local AWS CLI. Saved settings apply to future starts and builds.</p>
+      <p id="awsSettingsError" class="settings-error" role="alert"></p>
+      <button id="awsSettingsSave" type="submit" class="stack-button">Save and refresh</button>
+    </form>
+  </dialog>
+
+  <dialog id="customStacksDialog" class="settings-dialog" aria-labelledby="customStacksTitle">
+    <div class="settings-heading"><h2 id="customStacksTitle">Custom stacks</h2><button type="button" class="icon-button" data-close-dialog aria-label="Close custom stacks">×</button></div>
+    <div id="customStacksList" class="custom-stacks-list"></div>
+    <form id="customStackForm" class="settings-form">
+      <div class="settings-heading"><h3 id="stackEditorTitle">Add a stack</h3><button type="button" id="stackNew" class="stack-button">New stack</button></div>
+      <label for="customStackName">Stack name</label><input id="customStackName" required maxlength="80" placeholder="My development stack">
+      <label for="stackServiceSelect">Repository</label>
+      <div class="settings-row"><select id="stackServiceSelect"></select><button type="button" id="stackAddService" class="stack-button">Add</button></div>
+      <p class="settings-hint">Repositories start from top to bottom. Put dependencies first. Each service with a configured port must become ready before the next starts.</p>
+      <ol id="stackServiceOrder" class="stack-service-order"></ol>
+      <p id="customStackError" class="settings-error" role="alert"></p>
+      <button type="submit" class="stack-button">Save stack</button>
+    </form>
+  </dialog>
+
   <!-- REPO CONFIG / OVERRIDES MODAL -->
   <div id="configModal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
-    <div class="bg-card border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+    <div class="modal-panel bg-card border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
       <div class="flex items-center justify-between pb-4 border-b border-slate-800">
         <h3 class="text-sm font-bold text-white flex items-center gap-2">
           <i class="fa-solid fa-gear text-indigo-400"></i>
           <span>Configure: <span id="modalRepoName" class="text-indigo-400 font-mono">--</span></span>
         </h3>
-        <button id="modalCloseBtn" class="text-slate-400 hover:text-white">
+        <button id="modalCloseBtn" aria-label="Close configuration" class="text-slate-400 hover:text-white">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
@@ -376,13 +374,13 @@
 
   <!-- QUICK DEBUG LAUNCHER MODAL -->
   <div id="quickDebugModal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
-    <div class="bg-card border border-fuchsia-500/30 rounded-2xl w-full max-w-md p-6 shadow-2xl shadow-purple-950/50">
+    <div class="modal-panel bg-card border border-fuchsia-500/30 rounded-2xl w-full max-w-md p-6 shadow-2xl shadow-purple-950/50">
       <div class="flex items-center justify-between pb-4 border-b border-slate-800">
         <h3 class="text-sm font-bold text-white flex items-center gap-2">
           <i class="fa-solid fa-bug text-fuchsia-400"></i>
           <span>Debug Mode: <span id="quickDebugRepoName" class="text-fuchsia-400 font-mono">--</span></span>
         </h3>
-        <button id="quickDebugCloseBtn" class="text-slate-400 hover:text-white">
+        <button id="quickDebugCloseBtn" aria-label="Close debug settings" class="text-slate-400 hover:text-white">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>

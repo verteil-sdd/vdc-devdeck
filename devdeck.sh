@@ -7,8 +7,8 @@ PARENT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Auto-detect parent workspace directory containing all sibling repos if VERTEIL_DIR is not set
 export VERTEIL_DIR="${VERTEIL_DIR:-$PARENT_DIR}"
 
-# Default AWS profile to 'sdd' if not set
-export AWS_PROFILE="${AWS_PROFILE:-sdd}"
+# The server resolves saved dashboard settings before environment defaults.
+AWS_PROFILE_LABEL="${AWS_PROFILE:-VerteilDeveloper-683455398069} (saved dashboard settings take precedence)"
 
 PID_FILE="$HOME/.vdc-devdeck/devdeck.pid"
 LOG_FILE="$HOME/.vdc-devdeck/devdeck.log"
@@ -38,7 +38,7 @@ case "$1" in
     fi
     echo "Starting VDC DevDeck daemon on http://localhost:9990..."
     echo "📁 Workspace:   $VERTEIL_DIR"
-    echo "☁️  AWS Profile: $AWS_PROFILE"
+    echo "☁️  AWS Profile: $AWS_PROFILE_LABEL"
     cd "$SCRIPT_DIR"
     setsid node server/index.js >> "$LOG_FILE" 2>&1 &
     PID=$!
@@ -93,11 +93,11 @@ case "$1" in
       echo "✅ VDC DevDeck is RUNNING."
       echo "👉 URL:         http://localhost:9990"
       echo "📁 Workspace:   $VERTEIL_DIR"
-      echo "☁️  AWS Profile: $AWS_PROFILE"
+      echo "☁️  AWS Profile: $AWS_PROFILE_LABEL"
     else
       echo "⚪ VDC DevDeck is STOPPED."
       echo "📁 Workspace:   $VERTEIL_DIR"
-      echo "☁️  AWS Profile: $AWS_PROFILE"
+      echo "☁️  AWS Profile: $AWS_PROFILE_LABEL"
     fi
     ;;
 
@@ -108,7 +108,7 @@ case "$1" in
   fg)
     echo "Running VDC DevDeck in foreground..."
     echo "📁 Workspace:   $VERTEIL_DIR"
-    echo "☁️  AWS Profile: $AWS_PROFILE"
+    echo "☁️  AWS Profile: $AWS_PROFILE_LABEL"
     cd "$SCRIPT_DIR"
     node server/index.js
     ;;
