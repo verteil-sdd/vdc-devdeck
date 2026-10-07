@@ -33,7 +33,7 @@
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-<body class="bg-midnight text-slate-100 min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white">
+<body class="glass-background text-slate-100 min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white">
 
   <header class="app-header glass-panel">
     <div class="header-inner">
@@ -41,10 +41,6 @@
         <img src="/logo.svg" alt="" width="38" height="38" />
         <div>
           <div class="brand-name">VDC <span>DevDeck</span></div>
-          <p id="headerWorkspacePath" class="workspace-path">
-            <i class="fa-solid fa-folder-tree" aria-hidden="true"></i>
-            <span id="headerWorkspaceText">Auto-discovering...</span>
-          </p>
         </div>
       </a>
       <div class="header-actions">
@@ -66,23 +62,27 @@
           </button>
         </div>
         <button id="btnTheme" class="icon-button theme-toggle" title="Toggle light and dark theme" aria-label="Toggle light and dark theme">
-          <i class="fa-solid fa-sun" aria-hidden="true"></i>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg>
         </button>
       </div>
     </div>
     <div class="telemetry-bar">
       <div class="telemetry-metrics">
-        <div class="metric"><i class="fa-solid fa-microchip" aria-hidden="true"></i><span>CPU</span><span id="metricCpu" class="font-mono text-emerald-400">--%</span></div>
-        <div class="metric"><i class="fa-solid fa-memory" aria-hidden="true"></i><span>RAM</span><span id="metricRam" class="font-mono text-cyan-400">--/-- GB</span></div>
+        <p id="headerWorkspacePath" class="workspace-path">
+          <i class="fa-solid fa-folder-tree" aria-hidden="true"></i>
+          <span id="headerWorkspaceText">Auto-discovering...</span>
+        </p>
+        <div class="metric"><i class="fa-solid fa-microchip" aria-hidden="true"></i><span>CPU</span><span id="metricCpu" class="font-mono text-emerald-400">--%</span><span id="metricCpuBar" class="metric-bar metric-bar-cpu" role="progressbar" aria-label="CPU usage" aria-valuemin="0" aria-valuemax="100"><span></span></span></div>
+        <div class="metric"><i class="fa-solid fa-memory" aria-hidden="true"></i><span>RAM</span><span id="metricRam" class="font-mono text-cyan-400">--% · --/-- GB</span><span id="metricRamBar" class="metric-bar metric-bar-ram" role="progressbar" aria-label="RAM usage" aria-valuemin="0" aria-valuemax="100"><span></span></span></div>
         <div class="metric"><i class="fa-brands fa-java" aria-hidden="true"></i><span>JVMs</span><span id="metricJvms" class="font-mono text-amber-400">0</span></div>
       </div>
       <div class="aws-controls">
-        <button id="btnAwsSettings" class="icon-button" title="Configure AWS profile and region" aria-label="Configure AWS profile and region"><i class="fa-solid fa-gear" aria-hidden="true"></i></button>
         <button id="awsBadge" class="aws-status" title="Refresh AWS CodeArtifact token">
           <i class="fa-brands fa-aws" aria-hidden="true"></i>
           <span id="awsStatusText">AWS: Checking...</span>
           <i id="awsRefreshIcon" class="fa-solid fa-rotate" aria-hidden="true"></i>
         </button>
+        <button id="btnAwsSettings" class="stack-button aws-settings-button" title="Configure AWS profile and region"><i class="fa-solid fa-sliders" aria-hidden="true"></i></button>
       </div>
     </div>
   </header>
@@ -151,12 +151,22 @@
         <button id="btnRescan" class="icon-button" title="Rescan workspace" aria-label="Rescan workspace">
           <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
         </button>
+        <div class="view-control">
+          <button id="btnChangeView" class="stack-button" type="button" aria-expanded="false" aria-controls="viewOptions" title="Change application view">
+            <i id="viewIcon" class="fa-solid fa-table-cells-large" aria-hidden="true"></i><span>Change view</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div id="viewOptions" class="view-options hidden" role="group" aria-label="Application view">
+            <button type="button" data-view="list" aria-pressed="false"><i class="fa-solid fa-list" aria-hidden="true"></i>List</button>
+            <button type="button" data-view="compact" aria-pressed="false"><i class="fa-solid fa-grip" aria-hidden="true"></i>Compact Card</button>
+            <button type="button" data-view="full" aria-pressed="true"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i>Full Card</button>
+          </div>
+        </div>
       </div>
 
     </div>
 
     <!-- REPOSITORIES GRID -->
-    <div id="repoGrid" class="repo-grid">
+    <div id="repoGrid" class="repo-grid" data-view="full">
       <!-- Cards rendered dynamically by app.js -->
     </div>
 
@@ -172,7 +182,8 @@
   </main>
 
   <!-- LIVE STREAMING TERMINAL DRAWER -->
-  <div id="terminalDrawer" class="fixed bottom-0 left-0 right-0 z-50 terminal-window transition-all duration-300 flex flex-col h-72 translate-y-full">
+  <div id="terminalDrawer" class="fixed bottom-0 left-0 right-0 z-50 terminal-window flex flex-col translate-y-full">
+    <div id="terminalResizeHandle" class="terminal-resize-handle" role="separator" tabindex="0" aria-label="Resize log panel" aria-orientation="horizontal" aria-controls="terminalScreen" title="Drag to resize logs, or use Up and Down arrow keys"></div>
     
     <!-- Terminal Header / Tab Bar -->
     <div class="flex items-center justify-between px-4 py-2 bg-slate-900/95 border-b border-slate-800 select-none" id="terminalHeader">

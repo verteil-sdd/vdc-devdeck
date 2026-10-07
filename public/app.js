@@ -11,12 +11,15 @@ class App {
     this.logBuffers = new Map();
     this.isTerminalOpen = false;
     this.isTerminalMaximized = false;
+    this.terminalHeight = 288;
     this.autoScroll = true;
     this.ws = null;
 
     this.initElements();
     this.initTheme();
+    this.initView();
     this.initEventListeners();
+    this.initTerminalResize();
     this.settingsUI = new SettingsUI(this);
     this.connectWebSocket();
     this.fetchInitialData();
@@ -50,6 +53,7 @@ class App {
 
     // Terminal
     this.terminalDrawer = document.getElementById('terminalDrawer');
+    this.terminalResizeHandle = document.getElementById('terminalResizeHandle');
     this.termTabsContainer = document.getElementById('termTabsContainer');
     this.termAddAppBtn = document.getElementById('termAddAppBtn');
     this.termAddAppMenu = document.getElementById('termAddAppMenu');
@@ -105,7 +109,10 @@ class App {
       const label = `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`;
       button.title = label;
       button.setAttribute('aria-label', label);
-      button.innerHTML = `<i class="fa-solid fa-${theme === 'dark' ? 'sun' : 'moon'}" aria-hidden="true"></i>`;
+      const icon = theme === 'dark'
+        ? '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>'
+        : '<path d="M20.9 13.3A9 9 0 0 1 10.7 3.1a9 9 0 1 0 10.2 10.2Z"/>';
+      button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>`;
     };
     applyTheme(document.documentElement.dataset.theme || 'dark');
     button.addEventListener('click', () => {
@@ -114,6 +121,60 @@ class App {
       try {
         localStorage.setItem('devdeck-theme', theme);
       } catch { /* The toggle still works when storage is unavailable. */ }
+    });
+  }
+
+  initView() {
+    const button = document.getElementById('btnChangeView');
+    const options = document.getElementById('viewOptions');
+    const views = {
+      list: ['List', 'fa-list'],
+      compact: ['Compact Card', 'fa-grip'],
+      full: ['Full Card', 'fa-table-cells-large']
+    };
+    const applyView = (view) => {
+      if (!Object.hasOwn(views, view)) view = 'full';
+      this.repoGrid.dataset.view = view;
+      button.title = `Change application view (current: ${views[view][0]})`;
+      button.setAttribute('aria-label', button.title);
+      document.getElementById('viewIcon').className = `fa-solid ${views[view][1]}`;
+      options.querySelectorAll('[data-view]').forEach((option) => {
+        option.setAttribute('aria-pressed', String(option.dataset.view === view));
+      });
+    };
+    let savedView;
+    try { savedView = localStorage.getItem('devdeck-view'); } catch { /* Storage is optional. */ }
+    applyView(savedView);
+    const close = () => {
+      options.classList.add('hidden');
+      button.setAttribute('aria-expanded', 'false');
+    };
+    button.addEventListener('click', () => {
+      const open = options.classList.contains('hidden');
+      options.classList.toggle('hidden', !open);
+      button.setAttribute('aria-expanded', String(open));
+      if (open) options.querySelector('[aria-pressed="true"]').focus();
+    });
+    options.addEventListener('click', (event) => {
+      const option = event.target.closest('[data-view]');
+      if (!option) return;
+      applyView(option.dataset.view);
+      try { localStorage.setItem('devdeck-view', option.dataset.view); } catch { /* Storage is optional. */ }
+      close();
+      button.focus();
+    });
+    const control = button.parentElement;
+    document.addEventListener('click', (event) => {
+      if (!control.contains(event.target)) close();
+    });
+    control.addEventListener('focusout', (event) => {
+      if (!control.contains(event.relatedTarget)) close();
+    });
+    control.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        close();
+        button.focus();
+      }
     });
   }
 
@@ -190,13 +251,7 @@ class App {
 
     this.termMaximizeBtn.addEventListener('click', () => {
       this.isTerminalMaximized = !this.isTerminalMaximized;
-      if (this.isTerminalMaximized) {
-        this.terminalDrawer.classList.remove('h-72');
-        this.terminalDrawer.classList.add('h-[80vh]');
-      } else {
-        this.terminalDrawer.classList.remove('h-[80vh]');
-        this.terminalDrawer.classList.add('h-72');
-      }
+      this.setTerminalHeight(this.isTerminalMaximized ? window.innerHeight * .8 : this.terminalHeight);
     });
 
     this.termFilterInput.addEventListener('input', () => {
@@ -373,10 +428,13 @@ class App {
 
   updateMetrics(metrics) {
     if (!metrics) return;
-    this.metricCpu.textContent = `${metrics.cpu}%`;
-    if (metrics.cpu > 75) {
+    const percent = (value) => Number.isFinite(Number(value)) ? Math.max(0, Math.min(100, Number(value))) : 0;
+    const cpu = percent(metrics.cpu);
+    const ram = percent(metrics.memPercent ?? (metrics.memTotalMb > 0 ? metrics.memUsedMb / metrics.memTotalMb * 100 : 0));
+    this.metricCpu.textContent = `${cpu}%`;
+    if (cpu > 75) {
       this.metricCpu.className = 'font-mono font-medium text-rose-400';
-    } else if (metrics.cpu > 50) {
+    } else if (cpu > 50) {
       this.metricCpu.className = 'font-mono font-medium text-amber-400';
     } else {
       this.metricCpu.className = 'font-mono font-medium text-emerald-400';
@@ -384,7 +442,13 @@ class App {
 
     const ramUsedGb = (metrics.memUsedMb / 1024).toFixed(1);
     const ramTotalGb = (metrics.memTotalMb / 1024).toFixed(1);
-    this.metricRam.textContent = `${ramUsedGb}/${ramTotalGb} GB`;
+    this.metricRam.textContent = `${Math.round(ram)}% · ${ramUsedGb}/${ramTotalGb} GB`;
+    for (const [id, value] of [['metricCpuBar', cpu], ['metricRamBar', ram]]) {
+      const bar = document.getElementById(id);
+      bar.setAttribute('aria-valuenow', String(value));
+      bar.firstElementChild.style.transform = `scaleX(${value / 100})`;
+    }
+    document.getElementById('metricCpuBar').style.color = `var(--${cpu > 75 ? 'red' : cpu > 50 ? 'amber' : 'green'})`;
 
     this.metricJvms.textContent = metrics.activeJvms || '0';
   }
@@ -706,6 +770,62 @@ class App {
   }
 
   // Terminal Drawer Operations
+  getTerminalHeightBounds() {
+    const max = Math.max(1, window.innerHeight - 48);
+    return { min: Math.min(180, max), max };
+  }
+
+  setTerminalHeight(height) {
+    const { min, max } = this.getTerminalHeightBounds();
+    const nextHeight = Math.round(Math.min(max, Math.max(min, height)));
+    this.terminalDrawer.style.height = `${nextHeight}px`;
+    if (!this.isTerminalMaximized) this.terminalHeight = nextHeight;
+    this.terminalResizeHandle.setAttribute('aria-valuemin', min);
+    this.terminalResizeHandle.setAttribute('aria-valuemax', max);
+    this.terminalResizeHandle.setAttribute('aria-valuenow', nextHeight);
+    this.terminalResizeHandle.setAttribute('aria-valuetext', `${nextHeight} pixels high`);
+  }
+
+  initTerminalResize() {
+    const handle = this.terminalResizeHandle;
+    let drag = null;
+    handle.addEventListener('pointerdown', (event) => {
+      if (!event.isPrimary || event.button !== 0) return;
+      event.preventDefault();
+      handle.focus({ preventScroll: true });
+      drag = { pointerId: event.pointerId, y: event.clientY, height: this.terminalDrawer.getBoundingClientRect().height };
+      handle.setPointerCapture(event.pointerId);
+      document.body.classList.add('terminal-resizing');
+    });
+    handle.addEventListener('pointermove', (event) => {
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      this.isTerminalMaximized = false;
+      this.setTerminalHeight(drag.height + drag.y - event.clientY);
+    });
+    const endDrag = (event) => {
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      drag = null;
+      document.body.classList.remove('terminal-resizing');
+      if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    };
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+      handle.addEventListener(type, endDrag);
+    }
+    handle.addEventListener('keydown', (event) => {
+      const { min, max } = this.getTerminalHeightBounds();
+      const height = this.terminalDrawer.getBoundingClientRect().height;
+      const heights = { ArrowUp: height + 24, ArrowDown: height - 24, Home: min, End: max };
+      if (!Object.hasOwn(heights, event.key)) return;
+      event.preventDefault();
+      this.isTerminalMaximized = false;
+      this.setTerminalHeight(heights[event.key]);
+    });
+    window.addEventListener('resize', () => {
+      this.setTerminalHeight(this.isTerminalMaximized ? window.innerHeight * .8 : this.terminalHeight);
+    });
+    this.setTerminalHeight(this.terminalHeight);
+  }
+
   async openTerminal(repoName) {
     if (!this.logTabs.includes(repoName)) {
       this.logTabs.push(repoName);
@@ -1089,17 +1209,17 @@ class App {
       <div class="glass-card flex flex-col justify-between ${animate ? 'card-enter' : ''}" style="--entry-delay: ${Math.min(index, 7) * 35}ms" data-card-repo="${repo.name}">
         
         <!-- Header -->
-        <div>
+        <div class="card-body">
           <div class="card-heading">
-            <div>
+            <div class="card-identity">
               <h4 class="card-title truncate" title="${repo.name}">
                 ${repo.name}
               </h4>
-              <div class="flex items-center gap-1.5 mt-1 flex-wrap">
-                <span class="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${catClass}">
+              <div class="card-labels flex items-center gap-1.5 mt-1 flex-wrap">
+                <span class="card-stack text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${catClass}">
                   ${catLabel}
                 </span>
-                ${repo.port ? `<span class="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-800/40">:${repo.port}</span>` : ''}
+                ${repo.port ? `<span class="card-port text-[10px] font-mono text-cyan-400 bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-800/40">:${repo.port}</span>` : ''}
                 <span class="header-debug-badge text-[10px] font-mono text-fuchsia-300 flex items-center gap-1 ${isDebugActive ? '' : 'hidden'}" title="Remote Debugger (Port: ${debugPort})">
                   <i class="fa-solid fa-bug text-[10px] text-fuchsia-400"></i> :${debugPort}
                 </span>
@@ -1115,10 +1235,10 @@ class App {
           <!-- Metadata Rows -->
           <div class="card-metadata text-[11px] text-slate-400">
             <!-- Git Row -->
-            <div class="flex items-center justify-between">
-              <span class="flex items-center gap-1 text-slate-400 truncate max-w-[170px]" title="Branch: ${branch}">
+            <div class="card-git flex items-center justify-between">
+              <span class="card-branch flex items-center gap-1 text-slate-400 truncate max-w-[170px]" title="Branch: ${branch}">
                 <i class="fa-solid fa-code-branch text-slate-500 text-[10px]"></i>
-                <span class="font-mono text-slate-300">${branch}</span>
+                <span class="truncate font-mono text-slate-300">${branch}</span>
                 ${isDirty ? '<span class="text-[9px] bg-amber-500/20 text-amber-400 px-1 rounded ml-1">modified</span>' : ''}
               </span>
               <div class="flex items-center gap-1 font-mono text-[10px]">
@@ -1129,7 +1249,7 @@ class App {
             </div>
 
             <!-- JDK & Engine -->
-            <div class="flex items-center justify-between text-slate-400">
+            <div class="card-runtime flex items-center justify-between text-slate-400">
               <span class="flex items-center gap-1">
                 <i class="fa-brands fa-java text-amber-500/80 text-[10px]"></i>
                 <span>${repo.jdk || 'system'}</span>
@@ -1140,7 +1260,7 @@ class App {
             </div>
 
             <!-- Anti-lag tuning pill -->
-            <div class="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
+            <div class="card-tuning flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
               <span>Anti-Lag: <span class="text-indigo-400">384M / C1 JIT</span></span>
               <span>${repo.projectType.toUpperCase()}</span>
             </div>
@@ -1148,18 +1268,14 @@ class App {
         </div>
 
         <div class="card-actions">
-          <div>
-            <button class="btn-start icon-button" title="Start application" aria-label="Start application"><i class="fa-solid fa-play" aria-hidden="true"></i></button>
-            <button class="btn-stop icon-button" title="Stop process" aria-label="Stop process"><i class="fa-solid fa-stop" aria-hidden="true"></i></button>
-            <button class="btn-restart icon-button" title="Restart process" aria-label="Restart process"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i></button>
-            <button class="btn-debug icon-button" title="Launch with remote debugger" aria-label="Launch with remote debugger"><i class="fa-solid fa-bug" aria-hidden="true"></i></button>
-            <button class="btn-build icon-button" title="Build application" aria-label="Build application"><i class="fa-solid fa-hammer" aria-hidden="true"></i></button>
-            <button class="btn-pull icon-button" title="Git pull latest" aria-label="Git pull latest"><i class="fa-solid fa-cloud-arrow-down" aria-hidden="true"></i></button>
-          </div>
-          <div>
-            <button class="btn-logs icon-button" title="View logs" aria-label="View logs"><i class="fa-solid fa-terminal" aria-hidden="true"></i></button>
-            <button class="btn-config icon-button" title="Configure application" aria-label="Configure application"><i class="fa-solid fa-sliders" aria-hidden="true"></i></button>
-          </div>
+          <button class="btn-start icon-button" title="Start application" aria-label="Start application"><i class="fa-solid fa-play" aria-hidden="true"></i></button>
+          <button class="btn-stop icon-button" title="Stop process" aria-label="Stop process"><i class="fa-solid fa-stop" aria-hidden="true"></i></button>
+          <button class="btn-restart icon-button" title="Restart process" aria-label="Restart process"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i></button>
+          <button class="btn-debug icon-button" title="Launch with remote debugger" aria-label="Launch with remote debugger"><i class="fa-solid fa-bug" aria-hidden="true"></i></button>
+          <button class="btn-build icon-button" title="Build application" aria-label="Build application"><i class="fa-solid fa-hammer" aria-hidden="true"></i></button>
+          <button class="btn-pull icon-button" title="Git pull latest" aria-label="Git pull latest"><i class="fa-solid fa-cloud-arrow-down" aria-hidden="true"></i></button>
+          <button class="btn-logs icon-button" title="View logs" aria-label="View logs"><i class="fa-solid fa-terminal" aria-hidden="true"></i></button>
+          <button class="btn-config icon-button" title="Configure application" aria-label="Configure application"><i class="fa-solid fa-sliders" aria-hidden="true"></i></button>
         </div>
 
       </div>
