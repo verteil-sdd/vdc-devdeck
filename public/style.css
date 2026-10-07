@@ -89,7 +89,7 @@ body .hidden { display: none; }
 .glass-panel, .glass-card, body .modal-panel {
   background: var(--glass);
   border: 1px solid var(--border);
-  backdrop-filter: blur(22px);
+  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(22px);
   box-shadow: var(--shadow);
 }
@@ -102,9 +102,8 @@ header.glass-panel { background: var(--header); border-width: 0 0 1px; }
 .brand > div { min-width: 0; }
 .brand-name { font-size: 20px; font-weight: 700; letter-spacing: -.6px; }
 .brand-name span { font-weight: 500; color: var(--muted); }
-.workspace-path { display: flex; align-items: center; gap: 7px; min-width: 0; max-width: 100%; color: var(--faint); font-size: 13px; margin: 0; }
-.workspace-path > i { flex-shrink: 0; }
-#headerWorkspaceText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+.workspace-path { display: flex; align-items: center; gap: 7px; color: var(--faint); font-size: 13px; margin-top: 5px; }
+#headerWorkspaceText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 440px; }
 .header-actions, .stack-controls, .telemetry-metrics, .metric { display: flex; align-items: center; }
 .header-actions { gap: 20px; flex-shrink: 0; }
 .stack-controls { gap: 8px; }
@@ -123,7 +122,7 @@ header.glass-panel { background: var(--header); border-width: 0 0 1px; }
 .theme-toggle { border-radius: 50%; }
 .theme-toggle svg { width: 21px; height: 21px; }
 .telemetry-bar { min-height: 46px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
-.telemetry-metrics { flex: 1; min-width: 0; flex-wrap: wrap; gap: 26px; }
+.telemetry-metrics { gap: 26px; }
 .metric { gap: 8px; white-space: nowrap; }
 .metric > i { color: var(--faint); }
 .metric-bar { display: block; width: 54px; height: 5px; flex-shrink: 0; border-radius: 99px; overflow: hidden; background: var(--border); }
@@ -222,7 +221,7 @@ body [class*="bg-cyan-"], body [class*="bg-fuchsia-"], body [class*="bg-indigo-"
 body [class*="bg-gradient-"] { background-image: none; background-color: var(--accent-soft); color: var(--accent); box-shadow: none; }
 body [class*="border-cyan-"], body [class*="border-fuchsia-"], body [class*="border-indigo-"], body [class*="border-emerald-"] { border-color: var(--border); }
 body :is(#modalForm, #quickDebugForm) button[type="submit"] { background: var(--accent); color: var(--bg); box-shadow: none; }
-body :is(#configModal, #quickDebugModal) { background: rgba(12, 18, 32, .35); overflow-y: auto; }
+body :is(#configModal, #quickDebugModal) { background: #0007; overflow-y: auto; }
 body .modal-panel { background: var(--header); max-height: calc(100dvh - 32px); overflow-y: auto; }
 body select option { background: var(--solid); color: var(--text); }
 .terminal-window { height: min(18rem, calc(100dvh - 48px)); max-height: calc(100dvh - 48px); background: var(--header); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); color: var(--text); border-top: 1px solid var(--border); box-shadow: 0 -10px 40px rgba(0, 0, 0, .12); transition: opacity .2s ease, visibility .2s ease; }
