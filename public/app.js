@@ -1,4 +1,5 @@
-import { ansiToHtml } from './ansi.js';
+import { LogView } from './logView.js';
+import { renderCardMetadata } from './cardMetadata.js';
 import { SettingsUI } from './settingsUi.js';
 
 class App {
@@ -16,6 +17,7 @@ class App {
     this.ws = null;
 
     this.initElements();
+    this.logView = new LogView(this);
     this.initTheme();
     this.initView();
     this.initEventListeners();
@@ -62,7 +64,6 @@ class App {
     this.termAddAppRunningCount = document.getElementById('termAddAppRunningCount');
     this.terminalScreen = document.getElementById('terminalScreen');
     this.termAutoScroll = document.getElementById('termAutoScroll');
-    this.termFilterInput = document.getElementById('termFilterInput');
     this.termClearBtn = document.getElementById('termClearBtn');
     this.termMaximizeBtn = document.getElementById('termMaximizeBtn');
     this.termCloseBtn = document.getElementById('termCloseBtn');
@@ -240,22 +241,14 @@ class App {
     });
 
     this.termClearBtn.addEventListener('click', () => {
-      if (this.activeTerminalRepo) {
-        fetch(`/api/repos/${this.activeTerminalRepo}/logs/clear`, { method: 'POST' });
-        this.logBuffers.set(this.activeTerminalRepo, []);
-        this.terminalScreen.innerHTML = '';
-      }
+      this.logView.clear(this.activeTerminalRepo);
     });
 
     this.termCloseBtn.addEventListener('click', () => this.closeTerminal());
 
     this.termMaximizeBtn.addEventListener('click', () => {
       this.isTerminalMaximized = !this.isTerminalMaximized;
-      this.setTerminalHeight(this.isTerminalMaximized ? window.innerHeight * .8 : this.terminalHeight);
-    });
-
-    this.termFilterInput.addEventListener('input', () => {
-      this.renderTerminalLogs();
+      this.setTerminalHeight(this.isTerminalMaximized ? window.innerHeight : this.terminalHeight);
     });
 
     // Config Modal
@@ -335,6 +328,7 @@ class App {
           if (data.port) repo.port = data.port;
           if (data.debugActive !== undefined) repo.debugActive = data.debugActive;
           if (data.debugPort !== undefined) repo.debugPort = data.debugPort;
+          this.logView.updateControls(data.name);
 
           this.updateCounts();
 
@@ -370,23 +364,11 @@ class App {
         break;
 
       case 'log:line':
-        if (!this.logBuffers.has(data.name)) {
-          this.logBuffers.set(data.name, []);
-        }
-        const buf = this.logBuffers.get(data.name);
-        buf.push(data.text);
-        if (buf.length > 5000) buf.shift();
-
-        if (this.activeTerminalRepo === data.name) {
-          this.appendLogLine(data.text);
-        }
+        this.logView.append(data.name, data.text);
         break;
 
       case 'log:cleared':
-        this.logBuffers.set(data.name, []);
-        if (this.activeTerminalRepo === data.name) {
-          this.terminalScreen.innerHTML = '';
-        }
+        this.logView.cleared(data.name);
         break;
 
       case 'metrics:update':
@@ -605,7 +587,7 @@ class App {
   async startRepo(name) {
     try {
       this.openTerminal(name);
-      const res = await fetch(`/api/repos/${name}/start`, { method: 'POST' });
+      const res = await fetch(`/api/repos/${encodeURIComponent(name)}/start`, { method: 'POST' });
       const data = await res.json();
       if (!data.success) {
         alert(data.message);
@@ -617,7 +599,9 @@ class App {
 
   async stopRepo(name) {
     try {
-      await fetch(`/api/repos/${name}/stop`, { method: 'POST' });
+      const res = await fetch(`/api/repos/${encodeURIComponent(name)}/stop`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Stop request failed');
     } catch (err) {
       alert(`Failed to stop ${name}: ${err.message}`);
     }
@@ -771,13 +755,14 @@ class App {
 
   // Terminal Drawer Operations
   getTerminalHeightBounds() {
-    const max = Math.max(1, window.innerHeight - 48);
+    const max = Math.max(1, window.innerHeight - (this.isTerminalMaximized ? 0 : 48));
     return { min: Math.min(180, max), max };
   }
 
   setTerminalHeight(height) {
     const { min, max } = this.getTerminalHeightBounds();
     const nextHeight = Math.round(Math.min(max, Math.max(min, height)));
+    this.terminalDrawer.classList.toggle('terminal-maximized', this.isTerminalMaximized);
     this.terminalDrawer.style.height = `${nextHeight}px`;
     if (!this.isTerminalMaximized) this.terminalHeight = nextHeight;
     this.terminalResizeHandle.setAttribute('aria-valuemin', min);
@@ -821,7 +806,7 @@ class App {
       this.setTerminalHeight(heights[event.key]);
     });
     window.addEventListener('resize', () => {
-      this.setTerminalHeight(this.isTerminalMaximized ? window.innerHeight * .8 : this.terminalHeight);
+      this.setTerminalHeight(this.isTerminalMaximized ? window.innerHeight : this.terminalHeight);
     });
     this.setTerminalHeight(this.terminalHeight);
   }
@@ -847,20 +832,8 @@ class App {
     this.activeTerminalRepo = repoName;
     this.renderLogTabs();
 
-    // Check if we need to fetch initial log buffer from server
-    if (!this.logBuffers.has(repoName) || this.logBuffers.get(repoName).length === 0) {
-      this.terminalScreen.innerHTML = '<div class="text-slate-500 italic">[DevDeck] Loading logs...</div>';
-      try {
-        const res = await fetch(`/api/repos/${repoName}/logs`).then((r) => r.json());
-        if (res.success && res.lines) {
-          this.logBuffers.set(repoName, res.lines);
-        }
-      } catch (err) {
-        console.error(`[DevDeck] Error fetching logs for ${repoName}:`, err);
-      }
-    }
-
     this.renderTerminalLogs();
+    await this.logView.ensureLoaded(repoName);
   }
 
   closeLogTab(repoName, e) {
@@ -1013,53 +986,8 @@ class App {
     });
   }
 
-  appendLogLine(text) {
-    if (!this.isTerminalOpen) return;
-
-    const filter = this.termFilterInput.value.toLowerCase().trim();
-    if (filter && !text.toLowerCase().includes(filter)) {
-      return;
-    }
-
-    const div = document.createElement('div');
-    div.innerHTML = ansiToHtml(text);
-    this.terminalScreen.appendChild(div);
-
-    if (this.autoScroll) {
-      this.terminalScreen.scrollTop = this.terminalScreen.scrollHeight;
-    }
-  }
-
   renderTerminalLogs() {
-    const lines = this.activeTerminalRepo ? (this.logBuffers.get(this.activeTerminalRepo) || []) : [];
-    const filter = this.termFilterInput.value.toLowerCase().trim();
-    this.terminalScreen.innerHTML = '';
-
-    if (!this.activeTerminalRepo) {
-      this.terminalScreen.innerHTML = '<div class="text-slate-500 italic">[DevDeck] Click "+ Add App" or the terminal icon on any application card to stream stdout/stderr...</div>';
-      return;
-    }
-
-    if (lines.length === 0) {
-      this.terminalScreen.innerHTML = `<div class="text-slate-500 italic">[DevDeck] No logs recorded for ${this.activeTerminalRepo} yet.</div>`;
-      return;
-    }
-
-    const linesToRender = filter
-      ? lines.filter((l) => l.toLowerCase().includes(filter))
-      : lines;
-
-    const frag = document.createDocumentFragment();
-    for (const line of linesToRender) {
-      const div = document.createElement('div');
-      div.innerHTML = ansiToHtml(line);
-      frag.appendChild(div);
-    }
-    this.terminalScreen.appendChild(frag);
-
-    if (this.autoScroll) {
-      this.terminalScreen.scrollTop = this.terminalScreen.scrollHeight;
-    }
+    this.logView.render();
   }
 
   attachCardListeners(card, repoName) {
@@ -1134,6 +1062,7 @@ class App {
 
   render() {
     this.updateCounts();
+    for (const name of this.logView.panels.keys()) this.logView.updateControls(name);
     const all = Array.from(this.repos.values());
 
     const filtered = all.filter((repo) => {
@@ -1183,11 +1112,6 @@ class App {
     const isDebugActive = !!repo.debugActive;
     const debugPort = repo.debugPort || 5005;
 
-    const branch = repo.git && repo.git.branch ? repo.git.branch : 'main';
-    const isDirty = repo.git && repo.git.isDirty;
-    const ahead = repo.git ? repo.git.ahead : 0;
-    const behind = repo.git ? repo.git.behind : 0;
-
     // Category badge color
     let catClass = 'bg-slate-800 text-slate-400 border-slate-700';
     let catLabel = 'Repo';
@@ -1233,38 +1157,7 @@ class App {
           </div>
 
           <!-- Metadata Rows -->
-          <div class="card-metadata text-[11px] text-slate-400">
-            <!-- Git Row -->
-            <div class="card-git flex items-center justify-between">
-              <span class="card-branch flex items-center gap-1 text-slate-400 truncate max-w-[170px]" title="Branch: ${branch}">
-                <i class="fa-solid fa-code-branch text-slate-500 text-[10px]"></i>
-                <span class="truncate font-mono text-slate-300">${branch}</span>
-                ${isDirty ? '<span class="text-[9px] bg-amber-500/20 text-amber-400 px-1 rounded ml-1">modified</span>' : ''}
-              </span>
-              <div class="flex items-center gap-1 font-mono text-[10px]">
-                ${ahead > 0 ? `<span class="text-emerald-400">↑${ahead}</span>` : ''}
-                ${behind > 0 ? `<span class="text-rose-400">↓${behind}</span>` : ''}
-                ${!ahead && !behind ? `<span class="text-slate-500">synced</span>` : ''}
-              </div>
-            </div>
-
-            <!-- JDK & Engine -->
-            <div class="card-runtime flex items-center justify-between text-slate-400">
-              <span class="flex items-center gap-1">
-                <i class="fa-brands fa-java text-amber-500/80 text-[10px]"></i>
-                <span>${repo.jdk || 'system'}</span>
-              </span>
-              <span class="text-[10px] font-mono ${repo.isBuilt ? 'text-slate-400' : 'text-amber-400 font-semibold'}">
-                ${repo.isBuilt ? '<i class="fa-solid fa-check text-emerald-400 mr-0.5"></i> Built' : '<i class="fa-solid fa-triangle-exclamation mr-0.5"></i> Needs Build'}
-              </span>
-            </div>
-
-            <!-- Anti-lag tuning pill -->
-            <div class="card-tuning flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
-              <span>Anti-Lag: <span class="text-indigo-400">384M / C1 JIT</span></span>
-              <span>${repo.projectType.toUpperCase()}</span>
-            </div>
-          </div>
+          ${renderCardMetadata(repo)}
         </div>
 
         <div class="card-actions">

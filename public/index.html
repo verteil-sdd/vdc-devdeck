@@ -237,16 +237,6 @@
 
       <!-- Controls -->
       <div class="flex items-center gap-3">
-        <!-- Search in logs -->
-        <div class="relative w-48">
-          <input 
-            type="text" 
-            id="termFilterInput" 
-            placeholder="Filter logs..." 
-            class="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-[11px] font-mono text-slate-300 placeholder-slate-600 focus:outline-none focus:border-cyan-500"
-          />
-        </div>
-
         <!-- Auto-scroll toggle -->
         <label class="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
           <input type="checkbox" id="termAutoScroll" checked class="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-0">
@@ -271,13 +261,27 @@
 
     </div>
 
+    <p id="logViewStatus" class="log-view-status" role="status" aria-live="polite"></p>
     <!-- Terminal Screen -->
-    <div id="terminalScreen" class="flex-1 overflow-y-auto p-4 font-mono text-[12px] leading-relaxed select-text space-y-0.5">
+    <div id="terminalScreen" class="flex-1 font-mono text-[12px] leading-relaxed select-text">
       <!-- Log lines rendered here with ANSI colors -->
       <div class="text-slate-500 italic">[DevDeck] Click the terminal icon on any application card to stream stdout/stderr in real-time...</div>
     </div>
 
   </div>
+
+  <dialog id="logDetailDialog" class="settings-dialog log-detail-dialog" aria-labelledby="logDetailTitle">
+    <div class="settings-heading">
+      <h2 id="logDetailTitle">Full log</h2>
+      <button id="logDetailClose" type="button" class="icon-button" aria-label="Close full log">×</button>
+    </div>
+    <div class="log-detail-actions">
+      <button id="logDetailCopy" type="button" class="log-button">Copy to clipboard</button>
+      <button id="logDetailSave" type="button" class="log-button">Save As…</button>
+    </div>
+    <pre id="logDetailText" tabindex="0"></pre>
+    <p id="logDetailStatus" class="log-hint" role="status" aria-live="polite"></p>
+  </dialog>
 
   <dialog id="awsSettingsDialog" class="settings-dialog" aria-labelledby="awsSettingsTitle">
     <div class="settings-heading"><h2 id="awsSettingsTitle">AWS settings</h2><button type="button" class="icon-button" data-close-dialog aria-label="Close AWS settings">×</button></div>
@@ -292,7 +296,7 @@
     </form>
   </dialog>
 
-  <dialog id="customStacksDialog" class="settings-dialog modal-panel bg-card" aria-labelledby="customStacksTitle">
+  <dialog id="customStacksDialog" class="settings-dialog modal-panel" aria-labelledby="customStacksTitle">
     <div class="settings-heading"><h2 id="customStacksTitle">Custom stacks</h2><button type="button" class="icon-button" data-close-dialog aria-label="Close custom stacks">×</button></div>
     <div id="customStacksList" class="custom-stacks-list"></div>
     <form id="customStackForm" class="settings-form">
